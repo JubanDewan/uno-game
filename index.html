@@ -42,7 +42,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--B);outline-offs
 .hand{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;padding:14px 0}
 .hand .c{transition:transform .12s}
 .hand .on{cursor:pointer;transform:translateY(-8px)}
-.hand .off{opacity:.4}
+.hand .off{opacity:1;filter:saturate(.45) brightness(.72)}
 .st{text-align:center;font-weight:600;min-height:24px}
 .log{text-align:center;color:var(--mut);font-size:14px;min-height:20px}
 .ov{position:fixed;inset:0;background:#000a;display:grid;place-items:center;padding:20px}
@@ -80,7 +80,8 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--B);outline-offs
 @keyframes spin{to{transform:rotate(360deg)}}
 .me{padding-bottom:max(4px,env(safe-area-inset-bottom))}
 .mehead{display:flex;justify-content:center;gap:8px;align-items:center}
-.hand{flex-wrap:nowrap;gap:0;padding:18px 8px 6px;overflow-x:auto;justify-content:safe center;scrollbar-width:none}
+.hand{flex-wrap:nowrap;gap:0;padding:38px 16px 10px;margin-top:-24px;pointer-events:none;overflow-x:auto;justify-content:safe center;scrollbar-width:none}
+.hand .c{pointer-events:auto}
 .hand .c:hover{z-index:2}
 .ov{z-index:40}
 @media(orientation:landscape) and (max-height:520px){
@@ -88,7 +89,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--B);outline-offs
 .gm{gap:0}.gm .bar button{padding:4px 10px}
 .seats{padding:2px 0 8px}.log{display:none}.mid{gap:2px}.st{font-size:13px}
 .me{position:relative}.mehead{position:absolute;left:6px;bottom:10px;flex-direction:column;align-items:flex-start;z-index:3}
-.hand{padding-top:12px}}
+}
 .hand .on{transition:transform .16s cubic-bezier(.2,.9,.3,1.5),box-shadow .16s}
 .hand .on:hover{transform:translateY(-20px) scale(1.1) rotate(-2deg);box-shadow:0 10px 18px #0006;z-index:3}
 .hand .on:active{transform:translateY(-6px) scale(.93);transition-duration:.06s;box-shadow:0 2px 6px #0006}
@@ -109,16 +110,16 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--B);outline-offs
 <script>
 (function(){var show=function(m){var a=document.getElementById('app');if(a&&!window.__ok)a.innerHTML='<p style="padding:20px;color:#c0392b;font:15px system-ui">'+m+'</p>'};
 addEventListener('error',function(e){show('Game gagal dimuat: '+(e.message||'skrip tidak bisa diunduh (Firebase SDK terblokir atau tidak ada internet).'))},true);
-setTimeout(function(){show('Game belum termuat (uno v6). Cek internet, buka file lewat hosting atau server (bukan pratinjau chat), lalu muat ulang tanpa cache (Ctrl+Shift+R).')},22000)})();
+setTimeout(function(){show('Game belum termuat (uno v7). Cek internet, buka file lewat hosting atau server (bukan pratinjau chat), lalu muat ulang tanpa cache (Ctrl+Shift+R).')},22000)})();
 </script>
 <script type="module">
 const CFG={apiKey:"AIzaSyDF5n9QLR136niB935lG8ThtkI0lgfzaVY",authDomain:"game-5d4ed.firebaseapp.com",projectId:"game-5d4ed",storageBucket:"game-5d4ed.firebasestorage.app",messagingSenderId:"817751327735",appId:"1:817751327735:web:fa1a24d4f232e62f7ae4f2",measurementId:"G-CD48QGV9TZ"};
-let initializeApp,getFirestore,doc,setDoc,onSnapshot,runTransaction,getAuth,signInAnonymously,db,auth;
+let initializeApp,getFirestore,doc,setDoc,onSnapshot,runTransaction,deleteDoc,getAuth,signInAnonymously,db,auth;
 
 const $=s=>document.querySelector(s);
 const st={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch{}}};
 let pid=null,authErr=null,ct,sdkMsg='Memuat Firebase…',sdkErr=''; // pid = uid Firebase Auth (anonim), diisi setelah login berhasil
-let room=null,S=null,unsub=null,pick=null,lastRect=null,tt;
+let room=null,S=null,unsub=null,pick=null,lastRect=null,tt,delT=null,gone=false;
 const COL={R:'Merah',Y:'Kuning',G:'Hijau',B:'Biru'};
 const esc=s=>String(s).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
 const toast=m=>{const t=$('#toast');t.textContent=m;t.className='s';clearTimeout(tt);tt=setTimeout(()=>t.className='',2600)};
@@ -185,13 +186,22 @@ async function act(fn,code=room){
     });return true
   }catch(e){toast(typeof e==='string'?e:'Gagal: '+(e.code||e.message));sfx('err');return false}
 }
+const delRoom=async c=>{try{await deleteDoc(doc(db,'rooms',c))}catch(e){/* sudah dihapus pemain lain */}};
 function enter(code){
-  room=code;st.set('room',code);unsub&&unsub();
-  unsub=onSnapshot(doc(db,'rooms',code),sn=>{const prev=S;S=sn.exists()?sn.data():null;
-    if(!S||!S.players.some(p=>p.id===pid)){detach();toast('Room tidak tersedia')}else{render();fx(prev,S)}},
-    e=>{detach();toast('Firestore error: '+e.code)})
+  room=code;gone=false;clearTimeout(delT);delT=null;st.set('room',code);unsub&&unsub();
+  unsub=onSnapshot(doc(db,'rooms',code),sn=>{
+    const prev=S;
+    if(!sn.exists()){
+      if(prev&&prev.status==='finished'){unsub&&unsub();unsub=null;clearTimeout(delT);gone=true;st.set('room',null);render();return} // room dihapus setelah selesai: hasil tetap tampil dari salinan lokal
+      detach();toast('Room tidak tersedia');return
+    }
+    S=sn.data();
+    if(!S.players.some(p=>p.id===pid)){detach();toast('Room tidak tersedia');return}
+    render();fx(prev,S);
+    if(S.status==='finished'&&!delT){const i=S.players.findIndex(p=>p.id===pid);delT=setTimeout(()=>delRoom(code),6000+i*2500)} // hapus otomatis; urutan pemain mencegah semua menghapus bersamaan
+  },e=>{detach();toast('Firestore error: '+e.code)})
 }
-function detach(){unsub&&unsub();unsub=null;room=null;S=null;pick=null;st.set('room',null);render()}
+function detach(){unsub&&unsub();unsub=null;clearTimeout(delT);delT=null;gone=false;room=null;S=null;pick=null;st.set('room',null);render()}
 const myName=()=>{if(!pid){toast('Menghubungkan ke server…');return null}const n=$('#name').value.trim();if(!n){toast('Isi namamu dulu');return null}st.set('name',n);return n};
 
 const A=window.A={
@@ -214,7 +224,10 @@ const A=window.A={
   },
   start:()=>act(deal),
   async leave(){
-    if(S&&S.status==='lobby')await act(s=>{s.players=s.players.filter(p=>p.id!==pid);s.pids=s.pids.filter(i=>i!==pid);if(s.host===pid&&s.players.length)s.host=s.players[0].id});
+    const code=room;let empty=false;
+    if(S&&S.status==='lobby')await act(s=>{s.players=s.players.filter(p=>p.id!==pid);s.pids=s.pids.filter(i=>i!==pid);if(s.host===pid&&s.players.length)s.host=s.players[0].id;empty=!s.players.length});
+    else if(S&&S.status==='finished'&&!gone)delRoom(code);
+    if(empty)delRoom(code); // room kosong ikut dihapus
     detach()
   },
   tap(i,ev){lastRect=ev&&ev.currentTarget.getBoundingClientRect();const c=S.players[S.turn].hand[i];if(c[0]==='W'){if(!ok(S,c))return;pick=i;render()}else act(s=>play(s,i))},
@@ -300,7 +313,7 @@ function render(){
     <p class="mut">Main bareng 2–10 orang secara realtime. Habiskan kartumu lebih dulu.</p>
     <div class="col"><input id="name" placeholder="Namamu" maxlength="14" value="${esc(st.get('name')||'')}" autocomplete="off">
     <button class="p need" onclick="A.create()">Buat room baru</button>
-    <div class="row"><input id="code" placeholder="Kode room" maxlength="4" autocapitalize="characters" autocomplete="off"><button class="need" onclick="A.join()">Gabung</button></div><div id="stat" class="mut"></div><div class="mut" style="font-size:12px">uno v6</div></div>`;stat();
+    <div class="row"><input id="code" placeholder="Kode room" maxlength="4" autocapitalize="characters" autocomplete="off"><button class="need" onclick="A.join()">Gabung</button></div><div id="stat" class="mut"></div><div class="mut" style="font-size:12px">uno v7</div></div>`;stat();
     return
   }
   const bar=`<div class="bar"><span class="mut">Room <b>${room}</b></span><span class="row"><button onclick="A.snd()" aria-label="Suara">${mute?'🔇':'🔊'}</button><button onclick="A.leave()">Keluar</button></span></div>`;
@@ -315,7 +328,7 @@ function render(){
   const meI=S.players.findIndex(p=>p.id===pid),me=S.players[meI],cur=S.players[S.turn],play=S.status==='playing',mine=play&&cur.id===pid,n=me.hand.length;
   const last=n-1,can=i=>mine&&ok(S,me.hand[i])&&(!S.drew||i===last),any=me.hand.some((_,i)=>can(i)),canDraw=mine&&!S.drew&&!any;
   const msg=!play?'':mine?(S.drew?'Mainkan kartu yang baru diambil, atau lewati':any?'Giliranmu — pilih kartu':'Tidak ada kartu cocok — ketuk tumpukan untuk mengambil'):'Giliran '+esc(cur.name);
-  const cw=cwv(),gap=6,mg=n>1?Math.max(gap-Math.max(0,(n*cw+(n-1)*gap-(innerWidth-24))/(n-1)),-cw*.6):0;
+  const cw=cwv(),gap=6,mg=n>1?Math.max(gap-Math.max(0,(n*cw+(n-1)*gap-(innerWidth-52))/(n-1)),-cw*.6):0;
   const order=me.hand.map((c,i)=>[c,i]).sort((a,b)=>a[0]<b[0]?-1:1);
   const tot=S.players.length,m=tot-1,opp=Array.from({length:m},(_,k)=>(meI+1+k)%tot);
   const seat=(i,k)=>{const p=S.players[i],t=m>1?k/(m-1)*2-1:0,c=p.hand.length,f=Math.min(c,7);
@@ -332,7 +345,7 @@ function render(){
   ${pick!==null?`<div class="ov"><div><b>Pilih warna</b><div class="cp">${['R','Y','G','B'].map(c=>`<button data-c="${c}" style="background:var(--${c})" onclick="A.col('${c}')">${COL[c]}</button>`).join('')}</div><p><button onclick="A.cancel()">Batal</button></p></div></div>`:''}
   ${S.status==='finished'?`<div class="ov"><div><h2 style="margin:0 0 6px">${me.rank===1?'Kamu juara 1!':me.rank===tot?'Kamu kalah':'Kamu peringkat #'+me.rank}</h2><p class="mut" style="margin:0 0 8px">Permainan selesai — hanya tersisa 1 pemain.</p>
     <ol class="rk">${[...S.players].sort((x,y)=>x.rank-y.rank).map(x=>`<li><b>${x.rank}</b><span>${esc(x.name)}${x.id===pid?' (kamu)':''}</span>${x.rank===tot?'<em class="mut">kalah</em>':''}</li>`).join('')}</ol>
-    ${S.host===pid?'<button class="p" onclick="A.again()">Main lagi</button>':'<p class="mut">Menunggu host…</p>'} <button onclick="A.leave()">Keluar</button></div></div>`:''}`
+    <p class="mut" style="font-size:13px;margin:0 0 12px">${gone?'Data room sudah dihapus dari server.':'Data room akan dihapus otomatis dari server.'}</p><button class="p" onclick="A.leave()">Keluar</button></div></div>`:''}`
 }
 render();window.__ok=1;
 const HINT={'sdk':'Library Firebase tidak bisa diunduh. Coba ganti jaringan (Wi-Fi ⇄ data seluler), matikan VPN atau pemblokir iklan, lalu coba lagi.','auth/admin-restricted-operation':'Login anonim belum diizinkan. Aktifkan Anonymous di Authentication → Sign-in method, lalu cek Settings → User actions → Enable create (sign-up).','auth/operation-not-allowed':'Aktifkan Anonymous di Firebase Console → Authentication → Sign-in method.','auth/network-request-failed':'Tidak bisa menjangkau Firebase. Cek internet, dan buka file lewat server atau hosting, bukan pratinjau chat.','timeout':'Firebase tidak merespons. Cek internet, dan buka file lewat server atau hosting, bukan pratinjau chat.'};
@@ -348,7 +361,7 @@ async function loadSDK(){
     const host=new URL(f('app')).host;sdkMsg='Memuat Firebase dari '+host+'…';stat();
     try{
       const[A1,F1,U1]=await Promise.all([T(f('app')),T(f('firestore')),T(f('auth'))]);
-      ({initializeApp}=A1);({getFirestore,doc,setDoc,onSnapshot,runTransaction}=F1);({getAuth,signInAnonymously}=U1);
+      ({initializeApp}=A1);({getFirestore,doc,setDoc,onSnapshot,runTransaction,deleteDoc}=F1);({getAuth,signInAnonymously}=U1);
       const app=initializeApp(CFG);db=getFirestore(app);auth=getAuth(app);return
     }catch(e){errs.push(host+': '+(e&&e.message||e))}
   }
