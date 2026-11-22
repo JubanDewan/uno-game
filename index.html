@@ -102,11 +102,27 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--B);outline-offs
 .rk li{display:flex;gap:10px;align-items:center;padding:6px 4px;border-bottom:1px solid var(--ln)}
 .rk li b{width:24px;height:24px;border-radius:50%;background:var(--fg);color:var(--bg);display:grid;place-items:center;font-size:13px}
 .rk li span{flex:1}
+.av{display:inline-grid;place-items:center;border-radius:50%;color:#fff;font-style:normal;font-weight:800;flex:none}
+.who{display:flex;gap:10px;align-items:center;margin:2px 0 6px}
+.row3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+#pnl .ov{z-index:70}#toast{z-index:100}
+.ov>.pn{text-align:left;max-width:440px;max-height:86vh;overflow:auto;padding:16px}
+.pn .bar{margin-bottom:10px}.pn label{display:block;margin:10px 0 4px}.pn h4{margin:16px 0 6px}
+.tabs{display:flex;gap:8px;margin-bottom:10px}.tabs button{flex:1}
+.lbl{list-style:none;padding:0;margin:0}
+.lbl li{display:flex;gap:10px;align-items:center;padding:8px 6px;border-bottom:1px solid var(--ln)}
+.lbl li>b:first-child{width:22px;text-align:center;color:var(--mut)}
+.lbl li span{flex:1;display:flex;flex-direction:column;min-width:0}
+.lbl li.you{background:color-mix(in srgb,var(--Y) 22%,transparent);border-radius:8px}
+.lbl em{font-style:normal;text-align:right;font-weight:700}
+.cols{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px}
+.sw{width:34px;height:34px;border-radius:50%;padding:0;border:3px solid transparent}.sw.sel{border-color:var(--fg)}
 </style>
 </head>
 <body>
 <div id="app"><p class="mut" style="padding:20px">Memuat…</p></div>
 <div id="toast"></div>
+<div id="pnl"></div>
 <script>
 (function(){var show=function(m){var a=document.getElementById('app');if(a&&!window.__ok)a.innerHTML='<p style="padding:20px;color:#c0392b;font:15px system-ui">'+m+'</p>'};
 addEventListener('error',function(e){show('Game gagal dimuat: '+(e.message||'skrip tidak bisa diunduh (Firebase SDK terblokir atau tidak ada internet).'))},true);
@@ -114,7 +130,7 @@ setTimeout(function(){show('Game belum termuat (uno v7). Cek internet, buka file
 </script>
 <script type="module">
 const CFG={apiKey:"AIzaSyDF5n9QLR136niB935lG8ThtkI0lgfzaVY",authDomain:"game-5d4ed.firebaseapp.com",projectId:"game-5d4ed",storageBucket:"game-5d4ed.firebasestorage.app",messagingSenderId:"817751327735",appId:"1:817751327735:web:fa1a24d4f232e62f7ae4f2",measurementId:"G-CD48QGV9TZ"};
-let initializeApp,getFirestore,doc,setDoc,onSnapshot,runTransaction,deleteDoc,getAuth,signInAnonymously,db,auth;
+let initializeApp,getFirestore,doc,setDoc,onSnapshot,runTransaction,deleteDoc,getDoc,getDocs,collection,query,orderBy,limit,increment,getAuth,signInAnonymously,db,auth;
 
 const $=s=>document.querySelector(s);
 const st={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch{}}};
@@ -198,11 +214,11 @@ function enter(code){
     S=sn.data();
     if(!S.players.some(p=>p.id===pid)){detach();toast('Room tidak tersedia');return}
     render();fx(prev,S);
-    if(S.status==='finished'&&!delT){const i=S.players.findIndex(p=>p.id===pid);delT=setTimeout(()=>delRoom(code),6000+i*2500)} // hapus otomatis; urutan pemain mencegah semua menghapus bersamaan
+    if(S.status==='finished'&&!delT){recordGame(S);const i=S.players.findIndex(p=>p.id===pid);delT=setTimeout(()=>delRoom(code),6000+i*2500)} // hapus otomatis; urutan pemain mencegah semua menghapus bersamaan
   },e=>{detach();toast('Firestore error: '+e.code)})
 }
 function detach(){unsub&&unsub();unsub=null;clearTimeout(delT);delT=null;gone=false;room=null;S=null;pick=null;st.set('room',null);render()}
-const myName=()=>{if(!pid){toast('Menghubungkan ke server…');return null}const n=$('#name').value.trim();if(!n){toast('Isi namamu dulu');return null}st.set('name',n);return n};
+const myName=()=>{if(!pid){toast('Menghubungkan ke server…');return null}if(!ME){toast('Masuk dengan username dulu');return null}return ME.name};
 
 const A=window.A={
   async create(){
@@ -304,17 +320,141 @@ function fx(a,b){ // bandingkan state lama & baru: animasi + suara
 }
 addEventListener('resize',()=>{if(room&&S)render()});
 
+/* ===== Profil, teman & papan peringkat (dengan cache) ===== */
+const COLORS=['#e5383b','#f5b700','#27a05b','#2f6fdb','#8e44ad','#e67e22','#16a085','#34495e'],UNRE=/^@[a-z0-9_]{3,16}$/;
+let ME=null,ready=false,pcol=null;
+const C={get:k=>{try{return JSON.parse(localStorage.getItem('uno_'+k))}catch{return null}},set:(k,v)=>{try{v==null?localStorage.removeItem('uno_'+k):localStorage.setItem('uno_'+k,JSON.stringify(v))}catch{}}};
+const errMsg=e=>typeof e==='string'?e:e&&e.code==='permission-denied'?'Ditolak Firestore rules — pastikan rules terbaru sudah dipublish':'Gagal: '+((e&&(e.code||e.message))||e);
+const avatar=(p,z=30)=>`<i class="av" style="background:${p.color};width:${z}px;height:${z}px;font-size:${z*.45}px">${esc((p.name||'?')[0].toUpperCase())}</i>`;
+// Versi data publik: meta/app.v naik setiap ada perubahan profil/skor. Cache dipakai selama versinya sama.
+const ver=async()=>{const d=await getDoc(doc(db,'meta','app'));return d.exists()?d.data().v:0};
+const bump=()=>setDoc(doc(db,'meta','app'),{v:increment(1)},{merge:true}).catch(()=>{});
+async function loadMe(){
+  const c=C.get('me');if(c&&c.uid===pid){ME=c;return} // profil sendiri hanya berubah lewat perangkat ini, jadi cache dipercaya
+  const d=await getDoc(doc(db,'players',pid));ME=d.exists()?{uid:pid,...d.data()}:null;C.set('me',ME)
+}
+async function login(){
+  const un=$('#un').value.trim().toLowerCase().replace(/^(?!@)/,'@'),nm=$('#nm').value.trim(),err=m=>{$('#lerr').textContent=m};
+  if(!UNRE.test(un))return err('Username diawali @, lalu 3–16 huruf kecil, angka, atau _');
+  if(!nm||nm.length>14)return err('Nama tampilan wajib diisi (maks. 14 karakter)');
+  err('Memproses…');
+  try{
+    ME=await runTransaction(db,async t=>{
+      const ur=doc(db,'usernames',un),u=await t.get(ur);
+      if(u.exists()){
+        if(u.data().uid!==pid)throw'Username sudah dimiliki pemain lain';
+        const d=await t.get(doc(db,'players',pid));if(!d.exists())throw'Username sudah dimiliki pemain lain';
+        return{uid:pid,...d.data()} // masuk kembali di perangkat yang sama
+      }
+      const pr={username:un,name:nm,color:COLORS[Math.random()*COLORS.length|0],games:0,wins:0,points:0};
+      t.set(doc(db,'players',pid),pr);t.set(ur,{uid:pid});return{uid:pid,...pr}
+    });
+    C.set('me',ME);bump();render()
+  }catch(e){err(errMsg(e))}
+}
+async function recordGame(S){
+  const i=S.players.findIndex(p=>p.id===pid);if(!ME||i<0)return;
+  const n=S.players.length,r=S.players[i].rank;if(!r)return;
+  const sig=room+':'+S.players.map(p=>p.rank).join('')+':'+S.discard.length;if(C.get('last')===sig)return;C.set('last',sig);
+  const pts=(n-r)*10+(r===1?10:0),w=r===1?1:0;
+  try{await setDoc(doc(db,'players',pid),{games:increment(1),wins:increment(w),points:increment(pts)},{merge:true});
+    ME={...ME,games:ME.games+1,wins:ME.wins+w,points:ME.points+pts};C.set('me',ME);bump();toast('+'+pts+' poin')}
+  catch(e){C.set('last',null)}
+}
+async function getLB(){
+  const v=await ver(),c=C.get('lb');if(c&&c.v===v)return{rows:c.rows,src:'cache'};
+  const q=await getDocs(query(collection(db,'players'),orderBy('points','desc'),limit(20)));
+  const rows=q.docs.map(d=>({uid:d.id,...d.data()}));C.set('lb',{v,rows});return{rows,src:'server'}
+}
+async function getFriends(){
+  const v=await ver(),c=C.get('fr');if(c&&c.v===v)return{rows:c.rows,src:'cache'};
+  const f=await getDocs(collection(db,'players',pid,'friends'));
+  const ps=await Promise.all(f.docs.map(d=>getDoc(doc(db,'players',d.id))));
+  const rows=ps.filter(d=>d.exists()).map(d=>({uid:d.id,...d.data()}));C.set('fr',{v,rows});return{rows,src:'server'}
+}
+async function findUser(q){
+  q=q.trim().toLowerCase();
+  if(!q.startsWith('@'))throw'Pencarian hanya bisa dengan username yang diawali @';
+  if(!UNRE.test(q))throw'Format username tidak valid';
+  if(q===ME.username)throw'Itu username kamu sendiri';
+  const u=await getDoc(doc(db,'usernames',q));if(!u.exists())throw'Username tidak ditemukan';
+  const d=await getDoc(doc(db,'players',u.data().uid));if(!d.exists())throw'Username tidak ditemukan';
+  return{uid:d.id,...d.data()}
+}
+const PN=()=>$('#pnl');
+const panel=(t,b)=>{PN().innerHTML=`<div class="ov" onclick="if(event.target===this)A.close()"><div class="pn"><div class="bar"><b>${t}</b><button onclick="A.close()">Tutup</button></div>${b}</div></div>`};
+const urow=(x,extra='',rank='')=>`<li class="${x.uid===pid?'you':''}">${rank}${avatar(x)}<span><b>${esc(x.name)}</b><small class="mut">${esc(x.username)}</small></span>${extra}</li>`;
+async function openLB(tab='all'){
+  panel('Papan peringkat',`<div class="tabs"><button class="${tab==='all'?'p':''}" onclick="A.lb('all')">Global</button><button class="${tab==='fr'?'p':''}" onclick="A.lb('fr')">Teman</button></div><div id="pb" class="mut">Memuat…</div>`);
+  try{
+    const r=tab==='all'?await getLB():await getFriends();
+    const rows=[...(tab==='all'?r.rows:[...r.rows,ME])].map(x=>x.uid===pid?{...x,...ME}:x).filter((x,i,a)=>a.findIndex(y=>y.uid===x.uid)===i).sort((a,b)=>b.points-a.points).slice(0,20);
+    const el=$('#pb');if(!el)return;el.className='';
+    el.innerHTML=rows.length?`<ul class="lbl">${rows.map((x,i)=>urow(x,`<em>${x.points}<small class="mut"> poin</small><br><small class="mut">${x.wins} menang · ${x.games} main</small></em>`,`<b>${i+1}</b>`)).join('')}</ul><p class="mut" style="font-size:12px">Data dari ${r.src}. Skor: menang +10, ditambah 10 poin per pemain yang dikalahkan.</p>`:'Belum ada data.'
+  }catch(e){const el=$('#pb');if(el)el.textContent=errMsg(e)}
+}
+async function listFriends(){
+  try{const f=await getFriends(),el=$('#fl');if(!el)return;
+    el.className='';el.innerHTML=f.rows.length?`<ul class="lbl">${f.rows.map(x=>urow(x,`<button onclick="A.unfriend('${x.uid}')">Hapus</button>`)).join('')}</ul><p class="mut" style="font-size:12px">Data dari ${f.src}</p>`:'Belum ada teman.'}
+  catch(e){const el=$('#fl');if(el)el.textContent=errMsg(e)}
+}
+function openFriends(){
+  panel('Teman',`<div class="row"><input id="fq" placeholder="Cari username, mis. @budi" autocapitalize="none" autocomplete="off" onkeydown="if(event.key==='Enter')A.find()"><button class="p" onclick="A.find()">Cari</button></div><div id="fres" style="margin-top:8px"></div><h4>Daftar teman</h4><div id="fl" class="mut">Memuat…</div>`);listFriends()
+}
+function openProfile(){
+  pcol=ME.color;
+  panel('Profil',`<div style="text-align:center">${avatar(ME,64)}<div class="mut" style="margin-top:6px">${esc(ME.username)} · username tidak bisa diubah</div></div>
+  <label class="mut">Nama tampilan</label><input id="pn" maxlength="14" value="${esc(ME.name)}">
+  <label class="mut">Warna avatar</label><div class="cols">${COLORS.map(c=>`<button class="sw ${c===pcol?'sel':''}" style="background:${c}" onclick="A.pick('${c}',this)" aria-label="${c}"></button>`).join('')}</div>
+  <p class="mut">${ME.games} main · ${ME.wins} menang · ${ME.points} poin</p><button class="p" onclick="A.saveP()">Simpan</button><div id="perr" style="margin-top:8px;font-size:14px"></div>`)
+}
+Object.assign(A,{
+  login,
+  panel(n){n==='lb'?openLB('all'):n==='fr'?openFriends():openProfile()},
+  lb:openLB,close(){PN().innerHTML=''},
+  pick(c,b){pcol=c;document.querySelectorAll('.sw').forEach(x=>x.classList.toggle('sel',x===b))},
+  async saveP(){
+    const nm=$('#pn').value.trim(),e=$('#perr');if(!nm||nm.length>14){e.textContent='Nama wajib diisi (maks. 14 karakter)';return}
+    try{await setDoc(doc(db,'players',pid),{name:nm,color:pcol},{merge:true});ME={...ME,name:nm,color:pcol};C.set('me',ME);bump();
+      e.style.color='var(--G)';e.textContent='Tersimpan';if(!room)render()}
+    catch(x){e.style.color='var(--R)';e.textContent=errMsg(x)}
+  },
+  async find(){
+    const el=$('#fres');el.style.color='';el.textContent='Mencari…';
+    try{const x=await findUser($('#fq').value),c=C.get('fr'),isF=c&&c.rows.some(r=>r.uid===x.uid);
+      el.innerHTML=`<ul class="lbl">${urow(x,isF?'<span class="mut" style="flex:none">sudah berteman</span>':`<button class="p" onclick="A.befriend('${x.uid}')">Tambah</button>`)}</ul>`;PN().__f=x}
+    catch(e){el.style.color='var(--R)';el.textContent=errMsg(e)}
+  },
+  async befriend(uid){
+    const x=PN().__f;
+    try{await setDoc(doc(db,'players',pid,'friends',uid),{uid});
+      const c=C.get('fr');if(c&&!c.rows.some(r=>r.uid===uid)){c.rows.push(x);C.set('fr',c)} // perbarui cache lokal, tanpa baca ulang
+      $('#fres').textContent='Ditambahkan ke daftar teman';listFriends()}
+    catch(e){$('#fres').textContent=errMsg(e)}
+  },
+  async unfriend(uid){
+    try{await deleteDoc(doc(db,'players',pid,'friends',uid));
+      const c=C.get('fr');if(c){c.rows=c.rows.filter(r=>r.uid!==uid);C.set('fr',c)}listFriends()}
+    catch(e){toast(errMsg(e))}
+  }
+});
+
 /* ===== Tampilan ===== */
 const card=(c,col,cls='',at='')=>`<div class="c ${c[0]==='W'&&!col?'W':col||c[0]} ${cls}" ${at}><i>${lab(c)}</i></div>`;
 function render(){
   const el=$('#app');el.className=(room&&S&&S.status!=='lobby')?'g':'';
   if(!room||!S){
-    el.innerHTML=`<h1><span>U</span><span>N</span><span>O</span></h1>
-    <p class="mut">Main bareng 2–10 orang secara realtime. Habiskan kartumu lebih dulu.</p>
-    <div class="col"><input id="name" placeholder="Namamu" maxlength="14" value="${esc(st.get('name')||'')}" autocomplete="off">
-    <button class="p need" onclick="A.create()">Buat room baru</button>
-    <div class="row"><input id="code" placeholder="Kode room" maxlength="4" autocapitalize="characters" autocomplete="off"><button class="need" onclick="A.join()">Gabung</button></div><div id="stat" class="mut"></div><div class="mut" style="font-size:12px">uno v7</div></div>`;stat();
-    return
+    const h='<h1><span>U</span><span>N</span><span>O</span></h1>';
+    el.innerHTML=!ready?h+'<div id="stat" class="mut"></div>':!ME?h+`<p class="mut">Masuk dengan username untuk bermain, menyimpan skor, dan menambah teman.</p>
+    <div class="col"><input id="un" placeholder="@username" maxlength="17" autocapitalize="none" autocomplete="off"><input id="nm" placeholder="Nama tampilan (bisa diubah nanti)" maxlength="14" autocomplete="off">
+    <button class="p need" onclick="A.login()">Masuk / Daftar</button><div id="lerr" style="color:var(--R);font-size:14px"></div>
+    <p class="mut" style="font-size:13px;margin:0">Username unik dan terkunci di perangkat ini. Memakainya di perangkat lain akan ditolak.</p><div id="stat" class="mut"></div></div>`
+    :h+`<div class="who">${avatar(ME,40)}<span><b>${esc(ME.name)}</b><br><small class="mut">${esc(ME.username)}</small></span></div>
+    <div class="col"><button class="p need" onclick="A.create()">Buat room baru</button>
+    <div class="row"><input id="code" placeholder="Kode room" maxlength="4" autocapitalize="characters" autocomplete="off"><button class="need" onclick="A.join()">Gabung</button></div>
+    <div class="row3"><button onclick="A.panel('lb')">Peringkat</button><button onclick="A.panel('fr')">Teman</button><button onclick="A.panel('pf')">Profil</button></div>
+    <div id="stat" class="mut"></div><div class="mut" style="font-size:12px">uno v8</div></div>`;
+    stat();return
   }
   const bar=`<div class="bar"><span class="mut">Room <b>${room}</b></span><span class="row"><button onclick="A.snd()" aria-label="Suara">${mute?'🔇':'🔊'}</button><button onclick="A.leave()">Keluar</button></span></div>`;
   if(S.status==='lobby'){
@@ -322,7 +462,7 @@ function render(){
     el.innerHTML=`${bar}<div class="col"><div class="code">${room}</div>
     <p class="mut">Bagikan kode ini ke teman-temanmu. Pemain: ${S.players.length}/10</p>
     <ul class="list">${S.players.map(p=>`<li><span>${esc(p.name)}${p.id===pid?' (kamu)':''}</span>${p.id===S.host?'<span class="mut">host</span>':''}</li>`).join('')}</ul>
-    ${host?`<button class="p" onclick="A.start()" ${S.players.length<2?'disabled':''}>${S.players.length<2?'Tunggu minimal 2 pemain':'Mulai permainan'}</button>`:'<p class="mut">Menunggu host memulai…</p>'}</div>`;
+    ${host?`<button class="p" onclick="A.start()" ${S.players.length<2?'disabled':''}>${S.players.length<2?'Tunggu minimal 2 pemain':'Mulai permainan'}</button>`:'<p class="mut">Menunggu host memulai…</p>'}<div class="row3"><button onclick="A.panel('lb')">Peringkat</button><button onclick="A.panel('fr')">Teman</button><button onclick="A.panel('pf')">Profil</button></div></div>`;
     return
   }
   const meI=S.players.findIndex(p=>p.id===pid),me=S.players[meI],cur=S.players[S.turn],play=S.status==='playing',mine=play&&cur.id===pid,n=me.hand.length;
@@ -361,7 +501,7 @@ async function loadSDK(){
     const host=new URL(f('app')).host;sdkMsg='Memuat Firebase dari '+host+'…';stat();
     try{
       const[A1,F1,U1]=await Promise.all([T(f('app')),T(f('firestore')),T(f('auth'))]);
-      ({initializeApp}=A1);({getFirestore,doc,setDoc,onSnapshot,runTransaction,deleteDoc}=F1);({getAuth,signInAnonymously}=U1);
+      ({initializeApp}=A1);({getFirestore,doc,setDoc,onSnapshot,runTransaction,deleteDoc,getDoc,getDocs,collection,query,orderBy,limit,increment}=F1);({getAuth,signInAnonymously}=U1);
       const app=initializeApp(CFG);db=getFirestore(app);auth=getAuth(app);return
     }catch(e){errs.push(host+': '+(e&&e.message||e))}
   }
@@ -372,7 +512,7 @@ async function connect(){
   if(!db){try{await loadSDK()}catch(e){authErr='sdk';sdkErr=e.message;stat();return}}
   sdkMsg='Menghubungkan ke server…';stat();
   ct=setTimeout(()=>{if(!pid&&!authErr){authErr='timeout';stat()}},10000);
-  signInAnonymously(auth).then(u=>{pid=u.user.uid;authErr=null;stat();const r=st.get('room');if(r)enter(r)}).catch(e=>{authErr=e.code||e.message;stat()})
+  signInAnonymously(auth).then(async u=>{pid=u.user.uid;authErr=null;try{await loadMe()}catch(e){toast(errMsg(e))}ready=true;stat();render();const r=st.get('room');if(r&&ME)enter(r)}).catch(e=>{authErr=e.code||e.message;stat()})
 }
 A.retry=connect;connect();
 </script>
