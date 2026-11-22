@@ -97,14 +97,14 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--B);outline-offs
 <script>
 (function(){var show=function(m){var a=document.getElementById('app');if(a&&!window.__ok)a.innerHTML='<p style="padding:20px;color:#c0392b;font:15px system-ui">'+m+'</p>'};
 addEventListener('error',function(e){show('Game gagal dimuat: '+(e.message||'skrip tidak bisa diunduh (Firebase SDK terblokir atau tidak ada internet).'))},true);
-setTimeout(function(){show('Game belum termuat. Cek internet, buka file lewat hosting atau server (bukan pratinjau chat), lalu muat ulang tanpa cache (Ctrl+Shift+R).')},6000)})();
+setTimeout(function(){show('Game belum termuat (uno v4). Cek internet, buka file lewat hosting atau server (bukan pratinjau chat), lalu muat ulang tanpa cache (Ctrl+Shift+R).')},22000)})();
 </script>
 <script type="module">
-import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import{getFirestore,doc,setDoc,onSnapshot,runTransaction}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+// Muat Firebase SDK: gstatic dulu, jika gagal/lambat coba jsDelivr lalu esm.sh
+const L=async n=>{const m=[];for(const u of[`https://www.gstatic.com/firebasejs/10.12.2/firebase-${n}.js`,`https://cdn.jsdelivr.net/npm/firebase@10.12.2/${n}/+esm`,`https://esm.sh/firebase@10.12.2/${n}`]){try{return await Promise.race([import(u),new Promise((_,r)=>setTimeout(()=>r(0),6000))])}catch(e){m.push(new URL(u).host+': '+(e&&e.message||'timeout'))}}throw new Error('Firebase SDK gagal diunduh ('+m.join('; ')+')')};
+const{initializeApp}=await L('app'),{getFirestore,doc,setDoc,onSnapshot,runTransaction}=await L('firestore'),{getAuth,signInAnonymously}=await L('auth');
 
 const app=initializeApp({apiKey:"AIzaSyDF5n9QLR136niB935lG8ThtkI0lgfzaVY",authDomain:"game-5d4ed.firebaseapp.com",projectId:"game-5d4ed",storageBucket:"game-5d4ed.firebasestorage.app",messagingSenderId:"817751327735",appId:"1:817751327735:web:fa1a24d4f232e62f7ae4f2",measurementId:"G-CD48QGV9TZ"});
-import{getAuth,signInAnonymously}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 const db=getFirestore(app),auth=getAuth(app);
 
 const $=s=>document.querySelector(s);
@@ -282,7 +282,7 @@ function render(){
     <p class="mut">Main bareng 2–10 orang secara realtime. Habiskan kartumu lebih dulu.</p>
     <div class="col"><input id="name" placeholder="Namamu" maxlength="14" value="${esc(st.get('name')||'')}" autocomplete="off">
     <button class="p need" onclick="A.create()">Buat room baru</button>
-    <div class="row"><input id="code" placeholder="Kode room" maxlength="4" autocapitalize="characters" autocomplete="off"><button class="need" onclick="A.join()">Gabung</button></div><div id="stat" class="mut"></div></div>`;stat();
+    <div class="row"><input id="code" placeholder="Kode room" maxlength="4" autocapitalize="characters" autocomplete="off"><button class="need" onclick="A.join()">Gabung</button></div><div id="stat" class="mut"></div><div class="mut" style="font-size:12px">uno v4</div></div>`;stat();
     return
   }
   const bar=`<div class="bar"><span class="mut">Room <b>${room}</b></span><span class="row"><button onclick="A.snd()" aria-label="Suara">${mute?'🔇':'🔊'}</button><button onclick="A.leave()">Keluar</button></span></div>`;
@@ -290,8 +290,4 @@ function render(){
     const host=S.host===pid;
     el.innerHTML=`${bar}<div class="col"><div class="code">${room}</div>
     <p class="mut">Bagikan kode ini ke teman-temanmu. Pemain: ${S.players.length}/10</p>
-    <ul class="list">${S.players.map(p=>`<li><span>${esc(p.name)}${p.id===pid?' (kamu)':''}</span>${p.id===S.host?'<span class="mut">host</span>':''}</li>`).join('')}</ul>
-    ${host?`<button class="p" onclick="A.start()" ${S.players.length<2?'disabled':''}>${S.players.length<2?'Tunggu minimal 2 pemain':'Mulai permainan'}</button>`:'<p class="mut">Menunggu host memulai…</p>'}</div>`;
-    return
-  }
-  const meI=S.players.findIndex(p=>p.id===pid),me=S.players[meI],cur=S.players[S.turn],pl
+    <ul class="list">${S.players.map(p=>`<li><span>${esc(p.name)}${p.id===pid?' (kamu
