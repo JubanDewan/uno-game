@@ -50,6 +50,39 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--B);outline-offs
 .cp button{height:64px;border:0;color:#fff}.cp button[data-c=Y]{color:#222}
 #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;max-width:90vw}
 #toast.s{opacity:1}
+
+:root{--cw:58px;--ch:86px;--rs:min(64vw,38vh,280px)}
+@media(orientation:landscape) and (max-height:520px){:root{--cw:44px;--ch:65px}}
+@media(min-width:900px) and (min-height:700px){:root{--cw:70px;--ch:104px}}
+.c{width:var(--cw);height:var(--ch);font-size:calc(var(--cw)*.42);position:relative}
+.c.big{width:calc(var(--cw)*1.3);height:calc(var(--ch)*1.3);font-size:calc(var(--cw)*.55)}
+.c.back{background:#1b1c20;overflow:hidden;font-size:calc(var(--cw)*.42)}
+.c.back i{display:none}
+.c.back::before{content:'UNO';position:absolute;left:-10%;right:-10%;top:30%;bottom:30%;background:var(--R);border-radius:50%;transform:rotate(-24deg);display:grid;place-items:center;color:var(--Y);font:900 .5em/1 system-ui}
+.c.mini{width:calc(var(--cw)*.55);height:calc(var(--ch)*.55);font-size:calc(var(--cw)*.3);border-width:2px;border-radius:6px}
+#app.g{max-width:1100px;padding:8px}
+.gm{height:calc(100vh - 16px);height:calc(100dvh - 16px);display:flex;flex-direction:column;gap:4px}
+.gm .bar{margin:0}
+.seats{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 18px;padding:6px 0 10px}
+.seat{display:flex;flex-direction:column;align-items:center;gap:3px}
+.tag{display:flex;gap:6px;align-items:center;background:var(--pn);border:2px solid var(--ln);border-radius:8px;padding:1px 8px;font-size:12px;font-weight:700;max-width:150px}
+.tag span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tag b{background:var(--fg);color:var(--bg);border-radius:5px;padding:0 6px}
+.tag em{color:var(--R);font-style:normal;font-weight:800}
+.seat.t>.tag,.me.t .tag{background:var(--Y);border-color:var(--Y);color:#222}
+.fan{display:flex;justify-content:center;padding-top:2px}
+.mid{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
+.piles{position:relative;display:flex;align-items:center;gap:calc(var(--cw)*.6)}
+.pile{text-align:center;font-size:12px;color:var(--mut)}
+.ringw{position:absolute;left:50%;top:50%;width:var(--rs);height:var(--rs);margin:calc(var(--rs)/-2) 0 0 calc(var(--rs)/-2);pointer-events:none}
+.ring{width:100%;height:100%;color:var(--Y);opacity:.5;animation:spin 8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.me{padding-bottom:max(4px,env(safe-area-inset-bottom))}
+.mehead{display:flex;justify-content:center;gap:8px;align-items:center}
+.hand{flex-wrap:nowrap;gap:0;padding:18px 8px 6px;overflow-x:auto;justify-content:safe center;scrollbar-width:none}
+.hand .c:hover{z-index:2}
+.ov{z-index:40}
+@media(prefers-reduced-motion:reduce){.ring{animation:none}}
 </style>
 </head>
 <body>
@@ -66,7 +99,7 @@ const db=getFirestore(app),auth=getAuth(app);
 const $=s=>document.querySelector(s);
 const st={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch{}}};
 let pid=null,authErr=null,ct; // pid = uid Firebase Auth (anonim), diisi setelah login berhasil
-let room=null,S=null,unsub=null,pick=null,tt;
+let room=null,S=null,unsub=null,pick=null,lastRect=null,tt;
 const COL={R:'Merah',Y:'Kuning',G:'Hijau',B:'Biru'};
 const esc=s=>String(s).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
 const toast=m=>{const t=$('#toast');t.textContent=m;t.className='s';clearTimeout(tt);tt=setTimeout(()=>t.className='',2600)};
@@ -124,12 +157,12 @@ async function act(fn,code=room){
       if(!sn.exists())throw'Room tidak ditemukan';
       const s=sn.data();if(fn(s)!==false)t.set(ref,s)
     });return true
-  }catch(e){toast(typeof e==='string'?e:'Gagal: '+(e.code||e.message));return false}
+  }catch(e){toast(typeof e==='string'?e:'Gagal: '+(e.code||e.message));sfx('err');return false}
 }
 function enter(code){
   room=code;st.set('room',code);unsub&&unsub();
-  unsub=onSnapshot(doc(db,'rooms',code),sn=>{S=sn.exists()?sn.data():null;
-    if(!S||!S.players.some(p=>p.id===pid)){detach();toast('Room tidak tersedia')}else render()},
+  unsub=onSnapshot(doc(db,'rooms',code),sn=>{const prev=S;S=sn.exists()?sn.data():null;
+    if(!S||!S.players.some(p=>p.id===pid)){detach();toast('Room tidak tersedia')}else{render();fx(prev,S)}},
     e=>{detach();toast('Firestore error: '+e.code)})
 }
 function detach(){unsub&&unsub();unsub=null;room=null;S=null;pick=null;st.set('room',null);render()}
@@ -158,18 +191,81 @@ const A=window.A={
     if(S&&S.status==='lobby')await act(s=>{s.players=s.players.filter(p=>p.id!==pid);s.pids=s.pids.filter(i=>i!==pid);if(s.host===pid&&s.players.length)s.host=s.players[0].id});
     detach()
   },
-  tap(i){const c=S.players[S.turn].hand[i];if(c[0]==='W'){if(!ok(S,c))return;pick=i;render()}else act(s=>play(s,i))},
+  tap(i,ev){lastRect=ev&&ev.currentTarget.getBoundingClientRect();const c=S.players[S.turn].hand[i];if(c[0]==='W'){if(!ok(S,c))return;pick=i;render()}else act(s=>play(s,i))},
   col(c){const i=pick;pick=null;render();act(s=>play(s,i,c))},
   cancel(){pick=null;render()},
   draw:()=>act(drawCard),
+  snd(){mute=!mute;st.set('mute',mute?'1':'0');render();sfx('turn')},
   pass:()=>act(s=>{if(!s.drew||s.players[s.turn].id!==pid)throw'Tidak bisa melewati';adv(s)}),
   again:()=>act(s=>{if(s.host!==pid)throw'Hanya host';s.status='lobby';s.players.forEach(p=>p.hand=[])})
 };
 
+/* ===== Suara (sintesis WebAudio, tanpa file) ===== */
+let AC,mute=st.get('mute')==='1';
+const ac=()=>{try{AC=AC||new(window.AudioContext||window.webkitAudioContext)();if(AC.state==='suspended')AC.resume()}catch{}return AC};
+function tone(f,d,type='sine',g=.12,to=0,at=0){const x=ac();if(!x||mute)return;const t=x.currentTime+at,o=x.createOscillator(),v=x.createGain();o.type=type;o.frequency.setValueAtTime(f,t);if(to)o.frequency.exponentialRampToValueAtTime(to,t+d);v.gain.setValueAtTime(g,t);v.gain.exponentialRampToValueAtTime(.001,t+d);o.connect(v);v.connect(x.destination);o.start(t);o.stop(t+d+.02)}
+function noise(d,g=.15,hp=2000){const x=ac();if(!x||mute)return;const n=x.sampleRate*d|0,b=x.createBuffer(1,n,x.sampleRate),a=b.getChannelData(0);for(let i=0;i<n;i++)a[i]=(Math.random()*2-1)*(1-i/n);const o=x.createBufferSource(),f=x.createBiquadFilter(),v=x.createGain();o.buffer=b;f.type='highpass';f.frequency.value=hp;v.gain.value=g;o.connect(f);f.connect(v);v.connect(x.destination);o.start()}
+const seq=(fs,d,type,g,gap)=>fs.forEach((f,i)=>tone(f,d,type,g,0,i*gap));
+const SFX={
+  play:()=>{noise(.09,.18);tone(220,.08,'triangle',.12,120)},
+  draw:()=>{noise(.12,.1,1500);tone(300,.1,'sine',.08,520)},
+  skip:()=>{tone(520,.08,'square',.06);tone(390,.12,'square',.06,0,.09)},
+  rev:()=>tone(300,.28,'sawtooth',.05,900),
+  plus:()=>{tone(140,.25,'sawtooth',.09,90);tone(180,.25,'square',.04,110,.05)},
+  wild:()=>seq([392,523,659,784],.12,'triangle',.09,.06),
+  turn:()=>{tone(660,.12,'sine',.12);tone(880,.2,'sine',.12,0,.11)},
+  uno:()=>seq([523,659,784,1047],.14,'square',.05,.07),
+  start:()=>seq([262,330,392,523],.15,'triangle',.1,.08),
+  win:()=>seq([523,659,784,1047,784,1047,1319],.2,'triangle',.12,.12),
+  lose:()=>seq([392,349,311,262],.25,'sawtooth',.06,.18),
+  err:()=>tone(150,.2,'square',.07)
+};
+const sfx=k=>{try{SFX[k]()}catch{}};
+addEventListener('pointerdown',()=>ac(),{once:true});
+
+/* ===== Animasi kartu ===== */
+const rect=q=>{const e=document.querySelector(q);return e&&e.getBoundingClientRect()};
+const cwv=()=>parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cw'))||58;
+function fly(from,to,html,delay,after){
+  if(!from||!to){after&&after();return}
+  const w=document.createElement('div');w.innerHTML=html;const c=w.firstChild;
+  c.style.cssText+=`;position:fixed;left:${to.left}px;top:${to.top}px;width:${to.width}px;height:${to.height}px;margin:0;z-index:50;pointer-events:none;font-size:${to.width*.42}px`;
+  document.body.appendChild(c);
+  const dx=from.left+from.width/2-to.left-to.width/2,dy=from.top+from.height/2-to.top-to.height/2;
+  c.animate([{transform:`translate(${dx}px,${dy}px) scale(${from.width/to.width}) rotate(-12deg)`},{transform:'none'}],{duration:420,delay,easing:'cubic-bezier(.2,.8,.25,1)',fill:'backwards'}).onfinish=()=>{c.remove();after&&after()}
+}
+function fx(a,b){ // bandingkan state lama & baru: animasi + suara
+  if(!a||!b)return;
+  if(a.status!=='playing'){b.status==='playing'&&sfx('start');return}
+  const me=b.players.findIndex(p=>p.id===pid),ap=a.turn;
+  if(b.discard.length>a.discard.length){
+    const c=b.discard[b.discard.length-1],t=$('#disc .c'),v=c.slice(1);
+    const from=ap===me&&lastRect?lastRect:rect(`.seat[data-p="${ap}"]`);lastRect=null;
+    if(t){t.style.visibility='hidden';fly(from,t.getBoundingClientRect(),card(c,b.color,'big'),0,()=>t.style.visibility='')}
+    sfx('play');const k=c==='WF'||v==='D'?'plus':{S:'skip',R:'rev',W:'wild'}[v];k&&setTimeout(sfx,150,k)
+  }
+  b.players.forEach((p,i)=>{
+    const o=a.players[i],g=o?p.hand.length-o.hand.length:0;
+    if(g>0){
+      sfx('draw');
+      for(let k=0;k<g;k++){
+        if(i===me){const idx=p.hand.length-g+k,t=document.querySelector(`.hand [data-i="${idx}"]`);
+          if(t){t.style.visibility='hidden';fly(rect('#dp'),t.getBoundingClientRect(),card(p.hand[idx],''),k*120,()=>t.style.visibility='')}}
+        else{const f=rect(`.seat[data-p="${i}"] .fan`),w=cwv()*.55;
+          f&&fly(rect('#dp'),{left:f.left+f.width/2-w/2,top:f.top,width:w,height:w*1.5},'<div class="c back mini"></div>',k*120)}
+      }
+    }
+    if(o&&p.hand.length===1&&o.hand.length>1)setTimeout(sfx,350,'uno')
+  });
+  if(b.status==='finished')setTimeout(sfx,400,b.winner===b.players[me].name?'win':'lose');
+  else if(b.turn===me&&a.turn!==me)setTimeout(sfx,350,'turn')
+}
+addEventListener('resize',()=>{if(room&&S)render()});
+
 /* ===== Tampilan ===== */
 const card=(c,col,cls='',at='')=>`<div class="c ${c[0]==='W'&&!col?'W':col||c[0]} ${cls}" ${at}><i>${lab(c)}</i></div>`;
 function render(){
-  const el=$('#app');
+  const el=$('#app');el.className=(room&&S&&S.status!=='lobby')?'g':'';
   if(!room||!S){
     el.innerHTML=`<h1><span>U</span><span>N</span><span>O</span></h1>
     <p class="mut">Main bareng 2–10 orang secara realtime. Habiskan kartumu lebih dulu.</p>
@@ -178,7 +274,7 @@ function render(){
     <div class="row"><input id="code" placeholder="Kode room" maxlength="4" autocapitalize="characters" autocomplete="off"><button class="need" onclick="A.join()">Gabung</button></div><div id="stat" class="mut"></div></div>`;stat();
     return
   }
-  const bar=`<div class="bar"><span class="mut">Room <b>${room}</b></span><button onclick="A.leave()">Keluar</button></div>`;
+  const bar=`<div class="bar"><span class="mut">Room <b>${room}</b></span><span class="row"><button onclick="A.snd()" aria-label="Suara">${mute?'🔇':'🔊'}</button><button onclick="A.leave()">Keluar</button></span></div>`;
   if(S.status==='lobby'){
     const host=S.host===pid;
     el.innerHTML=`${bar}<div class="col"><div class="code">${room}</div>
@@ -187,40 +283,11 @@ function render(){
     ${host?`<button class="p" onclick="A.start()" ${S.players.length<2?'disabled':''}>${S.players.length<2?'Tunggu minimal 2 pemain':'Mulai permainan'}</button>`:'<p class="mut">Menunggu host memulai…</p>'}</div>`;
     return
   }
-  const me=S.players.find(p=>p.id===pid),cur=S.players[S.turn],play=S.status==='playing',mine=play&&cur.id===pid;
-  const last=me.hand.length-1,can=i=>mine&&ok(S,me.hand[i])&&(!S.drew||i===last);
-  const any=me.hand.some((_,i)=>can(i));
-  const canDraw=mine&&!S.drew&&!any;
-  const msg=!play?'':mine?(S.drew?'Mainkan kartu yang baru diambil, atau lewati':any?'Giliranmu — pilih kartu':'Tidak ada kartu cocok — ambil dari tumpukan'):'Giliran '+esc(cur.name);
+  const meI=S.players.findIndex(p=>p.id===pid),me=S.players[meI],cur=S.players[S.turn],play=S.status==='playing',mine=play&&cur.id===pid,n=me.hand.length;
+  const last=n-1,can=i=>mine&&ok(S,me.hand[i])&&(!S.drew||i===last),any=me.hand.some((_,i)=>can(i)),canDraw=mine&&!S.drew&&!any;
+  const msg=!play?'':mine?(S.drew?'Mainkan kartu yang baru diambil, atau lewati':any?'Giliranmu — pilih kartu':'Tidak ada kartu cocok — ketuk tumpukan untuk mengambil'):'Giliran '+esc(cur.name);
+  const cw=cwv(),ov=n>1?Math.min(cw*.6,Math.max(0,(n*cw-(innerWidth-32))/(n-1))):0;
   const order=me.hand.map((c,i)=>[c,i]).sort((a,b)=>a[0]<b[0]?-1:1);
-  el.innerHTML=`${bar}
-  <div class="chips">${S.players.map((p,i)=>`<div class="pc ${i===S.turn&&play?'t':''}">${esc(p.name)}${p.id===pid?' (kamu)':''}<b>${p.hand.length}</b>${p.hand.length===1?'<em>UNO!</em>':''}</div>`).join('')}</div>
-  <div class="mut" style="text-align:center">Arah ${S.dir===1?'↻ searah jarum jam':'↺ berlawanan'}</div>
-  <div class="table">
-    <div class="c big back ${canDraw?'go':''}" ${canDraw?'onclick="A.draw()" role="button" tabindex="0"':''}><i>${S.draw.length}</i></div>
-    ${card(top(S),S.color,'big')}
-  </div>
-  <div class="log">${esc(S.log)}</div>
-  <div class="st">${msg}</div>
-  <div class="hand">${order.map(([c,i])=>card(c,'',mine?(can(i)?'on':'off'):'',can(i)?`onclick="A.tap(${i})"`:'')).join('')}</div>
-  ${mine&&S.drew?'<div class="row" style="justify-content:center"><button onclick="A.pass()">Lewati giliran</button></div>':''}
-  ${pick!==null?`<div class="ov"><div><b>Pilih warna</b><div class="cp">${['R','Y','G','B'].map(c=>`<button data-c="${c}" style="background:var(--${c})" onclick="A.col('${c}')">${COL[c]}</button>`).join('')}</div><p><button onclick="A.cancel()">Batal</button></p></div></div>`:''}
-  ${S.status==='finished'?`<div class="ov"><div><h2 style="margin:0 0 6px">${S.winner===me.name?'Kamu menang!':esc(S.winner)+' menang!'}</h2><p class="mut">Kartunya habis lebih dulu.</p>
-    ${S.host===pid?'<button class="p" onclick="A.again()">Main lagi</button>':'<p class="mut">Menunggu host…</p>'} <button onclick="A.leave()">Keluar</button></div></div>`:''}`
-}
-render();
-const HINT={'auth/operation-not-allowed':'Aktifkan Anonymous di Firebase Console → Authentication → Sign-in method.','auth/network-request-failed':'Tidak bisa menjangkau Firebase. Cek internet, dan buka file lewat server atau hosting, bukan pratinjau chat.','timeout':'Firebase tidak merespons. Cek internet, dan buka file lewat server atau hosting, bukan pratinjau chat.'};
-function stat(){
-  const e=$('#stat');if(!e)return;
-  e.innerHTML=pid?'':authErr?`<span style="color:var(--R)">Gagal login (${esc(authErr)}).</span> ${esc(HINT[authErr]||'Periksa konfigurasi Firebase.')} <button onclick="A.retry()">Coba lagi</button>`:'Menghubungkan ke server…';
-  document.querySelectorAll('.need').forEach(b=>b.disabled=!pid)
-}
-function connect(){
-  authErr=null;stat();clearTimeout(ct);
-  ct=setTimeout(()=>{if(!pid&&!authErr){authErr='timeout';stat()}},10000);
-  signInAnonymously(auth).then(u=>{pid=u.user.uid;authErr=null;stat();const r=st.get('room');if(r)enter(r)}).catch(e=>{authErr=e.code||e.message;stat()})
-}
-A.retry=connect;connect();
-</script>
-</body>
-</html>
+  const tot=S.players.length,m=tot-1,opp=Array.from({length:m},(_,k)=>(meI+1+k)%tot);
+  const seat=(i,k)=>{const p=S.players[i],t=m>1?k/(m-1)*2-1:0,c=p.hand.length,f=Math.min(c,7);
+    return `<div class="seat ${play&&i===S.turn?'t':''}" data-p="${i}" style="transform:rotate(${(t*9).toFixed(1)}deg) translateY(${(t*t*14).toFixed(0)}px)"><div class="tag"><span>${esc(p.name)}</span><b>${c}</b>${c===1?'<em>UNO!</em>':
