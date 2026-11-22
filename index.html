@@ -89,7 +89,18 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--B);outline-offs
 .seats{padding:2px 0 8px}.log{display:none}.mid{gap:2px}.st{font-size:13px}
 .me{position:relative}.mehead{position:absolute;left:6px;bottom:10px;flex-direction:column;align-items:flex-start;z-index:3}
 .hand{padding-top:12px}}
-@media(prefers-reduced-motion:reduce){.ring{animation:none}}
+.hand .on{transition:transform .16s cubic-bezier(.2,.9,.3,1.5),box-shadow .16s}
+.hand .on:hover{transform:translateY(-20px) scale(1.1) rotate(-2deg);box-shadow:0 10px 18px #0006;z-index:3}
+.hand .on:active{transform:translateY(-6px) scale(.93);transition-duration:.06s;box-shadow:0 2px 6px #0006}
+.c.go{transition:transform .16s cubic-bezier(.2,.9,.3,1.5)}
+.c.go:hover{transform:translateY(-4px) scale(1.07)}
+.c.go:active{transform:scale(.93);transition-duration:.06s}
+.seat.done{opacity:.5}
+.spec{text-align:center;color:var(--mut);padding:26px 12px 18px;font-size:14px}
+.rk{list-style:none;padding:0;margin:0 0 14px;text-align:left}
+.rk li{display:flex;gap:10px;align-items:center;padding:6px 4px;border-bottom:1px solid var(--ln)}
+.rk li b{width:24px;height:24px;border-radius:50%;background:var(--fg);color:var(--bg);display:grid;place-items:center;font-size:13px}
+.rk li span{flex:1}
 </style>
 </head>
 <body>
@@ -98,7 +109,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--B);outline-offs
 <script>
 (function(){var show=function(m){var a=document.getElementById('app');if(a&&!window.__ok)a.innerHTML='<p style="padding:20px;color:#c0392b;font:15px system-ui">'+m+'</p>'};
 addEventListener('error',function(e){show('Game gagal dimuat: '+(e.message||'skrip tidak bisa diunduh (Firebase SDK terblokir atau tidak ada internet).'))},true);
-setTimeout(function(){show('Game belum termuat (uno v5). Cek internet, buka file lewat hosting atau server (bukan pratinjau chat), lalu muat ulang tanpa cache (Ctrl+Shift+R).')},22000)})();
+setTimeout(function(){show('Game belum termuat (uno v6). Cek internet, buka file lewat hosting atau server (bukan pratinjau chat), lalu muat ulang tanpa cache (Ctrl+Shift+R).')},22000)})();
 </script>
 <script type="module">
 const CFG={apiKey:"AIzaSyDF5n9QLR136niB935lG8ThtkI0lgfzaVY",authDomain:"game-5d4ed.firebaseapp.com",projectId:"game-5d4ed",storageBucket:"game-5d4ed.firebasestorage.app",messagingSenderId:"817751327735",appId:"1:817751327735:web:fa1a24d4f232e62f7ae4f2",measurementId:"G-CD48QGV9TZ"};
@@ -120,24 +131,27 @@ const lab=c=>({S:'⊘',R:'⇄',D:'+2',W:'W',F:'+4'}[c.slice(1)]||c.slice(1));
 const nm=(c,col)=>c[0]==='W'?(c==='WF'?'+4':'Wild')+' ('+COL[col]+')':COL[c[0]]+' '+lab(c);
 const top=s=>s.discard[s.discard.length-1];
 const ok=(s,c)=>c[0]==='W'||c[0]===s.color||c.slice(1)===top(s).slice(1);
-const adv=(s,k=1)=>{const n=s.players.length;s.turn=((s.turn+s.dir*k)%n+n)%n;s.drew=false};
+const step=s=>{const n=s.players.length;do{s.turn=((s.turn+s.dir)%n+n)%n}while(!s.players[s.turn].hand.length)}; // lompat ke pemain berikutnya yang masih punya kartu
+const adv=(s,k=1)=>{for(let i=0;i<k;i++)step(s);s.drew=false};
+const nxt=s=>{const n=s.players.length;let i=s.turn;do{i=((i+s.dir)%n+n)%n}while(!s.players[i].hand.length);return s.players[i]};
 function take(s,p,k){for(let i=0;i<k;i++){if(!s.draw.length){const t=s.discard.pop();s.draw=shuffle(s.discard);s.discard=[t]}if(s.draw.length)p.hand.push(s.draw.pop())}}
 function eff(s,c){
-  const n=s.players.length,v=c.slice(1),nx=()=>s.players[((s.turn+s.dir)%n+n)%n];
-  if(c==='WF'){take(s,nx(),4);adv(s,2)}
-  else if(v==='D'){take(s,nx(),2);adv(s,2)}
+  const v=c.slice(1),na=s.players.filter(p=>p.hand.length).length;
+  if(c==='WF'){take(s,nxt(s),4);adv(s,2)}
+  else if(v==='D'){take(s,nxt(s),2);adv(s,2)}
   else if(v==='S')adv(s,2);
-  else if(v==='R'){s.dir*=-1;adv(s,n==2?0:1)} // 2 pemain: reverse = main lagi
+  else if(v==='R'){s.dir*=-1;adv(s,na==2&&s.players[s.turn].hand.length?0:1)} // tersisa 2 pemain: reverse = main lagi
   else adv(s)
 }
 function deal(s){
   if(s.host!==pid)throw'Hanya host yang bisa memulai';
   if(s.players.length<2)throw'Minimal 2 pemain';
   s.draw=mkDeck();s.dir=1;s.drew=false;s.winner=null;s.log='Permainan dimulai!';
-  s.players.forEach(p=>{p.hand=[];take(s,p,7)});
+  s.players.forEach(p=>{p.hand=[];p.rank=0;take(s,p,7)});
   let c;do{c=s.draw.pop();if(c==='WF')s.draw.unshift(c)}while(c==='WF');
   s.discard=[c];s.color=c[0]==='W'?'RYGB'[Math.random()*4|0]:c[0];
-  s.turn=s.players.length-1;eff(s,c);s.status='playing'
+  const n=s.players.length;s.turn=((Math.random()*n|0)+n-1)%n;eff(s,c);s.status='playing'; // pemain pertama acak
+  s.log='Permainan dimulai! '+s.players[s.turn].name+' jalan pertama'
 }
 function play(s,i,col){
   const p=s.players[s.turn],c=p.hand[i];
@@ -146,7 +160,11 @@ function play(s,i,col){
   if(!ok(s,c))throw'Kartu tidak cocok';
   p.hand.splice(i,1);s.discard.push(c);s.color=c[0]==='W'?col:c[0];
   s.log=p.name+' memainkan '+nm(c,s.color);
-  if(!p.hand.length){s.status='finished';s.winner=p.name;return}
+  if(!p.hand.length){ // pemain ini habis kartu: dapat peringkat, permainan lanjut sampai tersisa 1 pemain
+    p.rank=s.players.filter(q=>q.rank>0).length+1;s.log+=' dan selesai di peringkat '+p.rank+'!';
+    const rest=s.players.filter(q=>q.hand.length);
+    if(rest.length<=1){if(rest[0])rest[0].rank=s.players.length;s.status='finished';s.winner=p.name;return} // winner = pemain yang mengakhiri permainan (tetap sesuai rules); juara = rank 1
+  }
   eff(s,c)
 }
 function drawCard(s){
@@ -265,7 +283,10 @@ function fx(a,b){ // bandingkan state lama & baru: animasi + suara
     }
     if(o&&p.hand.length===1&&o.hand.length>1)setTimeout(sfx,350,'uno')
   });
-  if(b.status==='finished')setTimeout(sfx,400,b.winner===b.players[me].name?'win':'lose');
+  const mp=b.players[me],mo=a.players[me];
+  if(b.players.some((p,i)=>i!==me&&!p.hand.length&&a.players[i]&&a.players[i].hand.length))setTimeout(sfx,300,'wild');
+  if(b.status==='finished')setTimeout(sfx,500,mp.rank===b.players.length?'lose':'win');
+  else if(!mp.hand.length&&mo.hand.length)setTimeout(sfx,500,'win');
   else if(b.turn===me&&a.turn!==me)setTimeout(sfx,350,'turn')
 }
 addEventListener('resize',()=>{if(room&&S)render()});
@@ -279,7 +300,7 @@ function render(){
     <p class="mut">Main bareng 2–10 orang secara realtime. Habiskan kartumu lebih dulu.</p>
     <div class="col"><input id="name" placeholder="Namamu" maxlength="14" value="${esc(st.get('name')||'')}" autocomplete="off">
     <button class="p need" onclick="A.create()">Buat room baru</button>
-    <div class="row"><input id="code" placeholder="Kode room" maxlength="4" autocapitalize="characters" autocomplete="off"><button class="need" onclick="A.join()">Gabung</button></div><div id="stat" class="mut"></div><div class="mut" style="font-size:12px">uno v5</div></div>`;stat();
+    <div class="row"><input id="code" placeholder="Kode room" maxlength="4" autocapitalize="characters" autocomplete="off"><button class="need" onclick="A.join()">Gabung</button></div><div id="stat" class="mut"></div><div class="mut" style="font-size:12px">uno v6</div></div>`;stat();
     return
   }
   const bar=`<div class="bar"><span class="mut">Room <b>${room}</b></span><span class="row"><button onclick="A.snd()" aria-label="Suara">${mute?'🔇':'🔊'}</button><button onclick="A.leave()">Keluar</button></span></div>`;
@@ -298,7 +319,7 @@ function render(){
   const order=me.hand.map((c,i)=>[c,i]).sort((a,b)=>a[0]<b[0]?-1:1);
   const tot=S.players.length,m=tot-1,opp=Array.from({length:m},(_,k)=>(meI+1+k)%tot);
   const seat=(i,k)=>{const p=S.players[i],t=m>1?k/(m-1)*2-1:0,c=p.hand.length,f=Math.min(c,7);
-    return `<div class="seat ${play&&i===S.turn?'t':''}" data-p="${i}" style="transform:rotate(${(t*9).toFixed(1)}deg) translateY(${(t*t*14).toFixed(0)}px)"><div class="tag"><span>${esc(p.name)}</span><b>${c}</b>${c===1?'<em>UNO!</em>':''}</div><div class="fan">${Array.from({length:f},(_,j)=>`<div class="c back mini" style="margin-left:${j?'calc(var(--cw)*-.36)':0};transform:rotate(${((j-(f-1)/2)*7).toFixed(1)}deg)"></div>`).join('')}</div></div>`};
+    return `<div class="seat ${play&&i===S.turn?'t':''} ${play&&!c?'done':''}" data-p="${i}" style="transform:rotate(${(t*9).toFixed(1)}deg) translateY(${(t*t*14).toFixed(0)}px)"><div class="tag"><span>${esc(p.name)}</span><b>${play&&!c?'#'+p.rank:c}</b>${c===1?'<em>UNO!</em>':''}</div><div class="fan">${Array.from({length:f},(_,j)=>`<div class="c back mini" style="margin-left:${j?'calc(var(--cw)*-.36)':0};transform:rotate(${((j-(f-1)/2)*7).toFixed(1)}deg)"></div>`).join('')}</div></div>`};
   const ring=`<div class="ringw" style="transform:scaleX(${S.dir})"><svg class="ring" style="animation-delay:-${((Date.now()/1000)%8).toFixed(2)}s" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"><defs><marker id="ah" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto"><path d="M0 0L10 5L0 10z" fill="currentColor" stroke="none"/></marker></defs><path d="M16 30A40 40 0 0 1 84 30" marker-end="url(#ah)"/><path d="M84 70A40 40 0 0 1 16 70" marker-end="url(#ah)"/></svg></div>`;
   el.innerHTML=`<div class="gm">${bar}
   <div class="seats">${opp.map(seat).join('')}</div>
@@ -306,10 +327,11 @@ function render(){
     <div class="pile"><div id="dp" class="c back big ${canDraw?'go':''}" ${canDraw?'onclick="A.draw()" role="button" tabindex="0"':''}></div>${S.draw.length}</div>
     <div id="disc">${card(top(S),S.color,'big')}</div></div>
     <div class="log">${esc(S.log)}</div><div class="st">${msg}</div></div>
-  <div class="me ${mine?'t':''}"><div class="mehead"><div class="tag"><span>${esc(me.name)} (kamu)</span><b>${n}</b>${n===1?'<em>UNO!</em>':''}</div>${mine&&S.drew?'<button onclick="A.pass()">Lewati</button>':''}</div>
-  <div class="hand">${order.map(([c,i],k)=>card(c,'',mine?(can(i)?'on':'off'):'',`data-i="${i}" style="margin-left:${k?mg:0}px"${can(i)?` onclick="A.tap(${i},event)"`:''}`)).join('')}</div></div></div>
+  <div class="me ${mine?'t':''}"><div class="mehead"><div class="tag"><span>${esc(me.name)} (kamu)</span><b>${play&&!n?'#'+me.rank:n}</b>${n===1?'<em>UNO!</em>':''}</div>${mine&&S.drew?'<button onclick="A.pass()">Lewati</button>':''}</div>
+  ${play&&!n?`<div class="spec">Kamu selesai di peringkat #${me.rank}.<br>Kamu menonton sampai permainan berakhir.</div>`:''}<div class="hand">${order.map(([c,i],k)=>card(c,'',mine?(can(i)?'on':'off'):'',`data-i="${i}" style="margin-left:${k?mg:0}px"${can(i)?` onclick="A.tap(${i},event)"`:''}`)).join('')}</div></div></div>
   ${pick!==null?`<div class="ov"><div><b>Pilih warna</b><div class="cp">${['R','Y','G','B'].map(c=>`<button data-c="${c}" style="background:var(--${c})" onclick="A.col('${c}')">${COL[c]}</button>`).join('')}</div><p><button onclick="A.cancel()">Batal</button></p></div></div>`:''}
-  ${S.status==='finished'?`<div class="ov"><div><h2 style="margin:0 0 6px">${S.winner===me.name?'Kamu menang!':esc(S.winner)+' menang!'}</h2><p class="mut">Kartunya habis lebih dulu.</p>
+  ${S.status==='finished'?`<div class="ov"><div><h2 style="margin:0 0 6px">${me.rank===1?'Kamu juara 1!':me.rank===tot?'Kamu kalah':'Kamu peringkat #'+me.rank}</h2><p class="mut" style="margin:0 0 8px">Permainan selesai — hanya tersisa 1 pemain.</p>
+    <ol class="rk">${[...S.players].sort((x,y)=>x.rank-y.rank).map(x=>`<li><b>${x.rank}</b><span>${esc(x.name)}${x.id===pid?' (kamu)':''}</span>${x.rank===tot?'<em class="mut">kalah</em>':''}</li>`).join('')}</ol>
     ${S.host===pid?'<button class="p" onclick="A.again()">Main lagi</button>':'<p class="mut">Menunggu host…</p>'} <button onclick="A.leave()">Keluar</button></div></div>`:''}`
 }
 render();window.__ok=1;
