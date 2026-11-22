@@ -65,7 +65,7 @@ const db=getFirestore(app),auth=getAuth(app);
 
 const $=s=>document.querySelector(s);
 const st={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch{}}};
-let pid=null; // diisi uid Firebase Auth (anonim) setelah login
+let pid=null,authErr=null,ct; // pid = uid Firebase Auth (anonim), diisi setelah login berhasil
 let room=null,S=null,unsub=null,pick=null,tt;
 const COL={R:'Merah',Y:'Kuning',G:'Hijau',B:'Biru'};
 const esc=s=>String(s).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
@@ -174,8 +174,8 @@ function render(){
     el.innerHTML=`<h1><span>U</span><span>N</span><span>O</span></h1>
     <p class="mut">Main bareng 2–10 orang secara realtime. Habiskan kartumu lebih dulu.</p>
     <div class="col"><input id="name" placeholder="Namamu" maxlength="14" value="${esc(st.get('name')||'')}" autocomplete="off">
-    <button class="p" onclick="A.create()">Buat room baru</button>
-    <div class="row"><input id="code" placeholder="Kode room" maxlength="4" autocapitalize="characters" autocomplete="off"><button onclick="A.join()">Gabung</button></div></div>`;
+    <button class="p need" onclick="A.create()">Buat room baru</button>
+    <div class="row"><input id="code" placeholder="Kode room" maxlength="4" autocapitalize="characters" autocomplete="off"><button class="need" onclick="A.join()">Gabung</button></div><div id="stat" class="mut"></div></div>`;stat();
     return
   }
   const bar=`<div class="bar"><span class="mut">Room <b>${room}</b></span><button onclick="A.leave()">Keluar</button></div>`;
@@ -209,7 +209,18 @@ function render(){
     ${S.host===pid?'<button class="p" onclick="A.again()">Main lagi</button>':'<p class="mut">Menunggu host…</p>'} <button onclick="A.leave()">Keluar</button></div></div>`:''}`
 }
 render();
-signInAnonymously(auth).then(u=>{pid=u.user.uid;const r=st.get('room');if(r)enter(r)}).catch(e=>toast('Login anonim gagal: '+e.code));
+const HINT={'auth/operation-not-allowed':'Aktifkan Anonymous di Firebase Console → Authentication → Sign-in method.','auth/network-request-failed':'Tidak bisa menjangkau Firebase. Cek internet, dan buka file lewat server atau hosting, bukan pratinjau chat.','timeout':'Firebase tidak merespons. Cek internet, dan buka file lewat server atau hosting, bukan pratinjau chat.'};
+function stat(){
+  const e=$('#stat');if(!e)return;
+  e.innerHTML=pid?'':authErr?`<span style="color:var(--R)">Gagal login (${esc(authErr)}).</span> ${esc(HINT[authErr]||'Periksa konfigurasi Firebase.')} <button onclick="A.retry()">Coba lagi</button>`:'Menghubungkan ke server…';
+  document.querySelectorAll('.need').forEach(b=>b.disabled=!pid)
+}
+function connect(){
+  authErr=null;stat();clearTimeout(ct);
+  ct=setTimeout(()=>{if(!pid&&!authErr){authErr='timeout';stat()}},10000);
+  signInAnonymously(auth).then(u=>{pid=u.user.uid;authErr=null;stat();const r=st.get('room');if(r)enter(r)}).catch(e=>{authErr=e.code||e.message;stat()})
+}
+A.retry=connect;connect();
 </script>
 </body>
 </html>
