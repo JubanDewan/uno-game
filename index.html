@@ -182,7 +182,7 @@ const CFG={apiKey:"AIzaSyDF5n9QLR136niB935lG8ThtkI0lgfzaVY",authDomain:"game-5d4
 let initializeApp,getFirestore,doc,setDoc,onSnapshot,runTransaction,deleteDoc,getDoc,getDocs,collection,query,orderBy,limit,increment,addDoc,getAuth,signInAnonymously,db,auth;
 
 const APP_VER='13';
-const VOICE_API='https://uno-game-voice.jubandewan.workers.dev/'; // isi dengan URL Worker penerbit token LiveKit, mis. https://uno-voice.namamu.workers.dev (lihat voice-worker.js) // naikkan setiap rilis; dipakai untuk mendeteksi versi baru
+const VOICE_API='https://uno-game-voice.jubandewan.workers.dev'; // isi dengan URL Worker penerbit token LiveKit, mis. https://uno-voice.namamu.workers.dev (lihat voice-worker.js) // naikkan setiap rilis; dipakai untuk mendeteksi versi baru
 const $=s=>document.querySelector(s);
 const st={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch{}}};
 let pid=null,authErr=null,ct,sdkMsg='Memuat Firebase…',sdkErr=''; // pid = uid Firebase Auth (anonim), diisi setelah login berhasil
