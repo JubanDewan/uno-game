@@ -262,8 +262,23 @@ function drawCard(s){
 }
 
 /* ===== Voice Chat (WebRTC Mesh + Firestore Signaling) ===== */
-const ICE={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]};
-let micStream=null,micOn=false,micBusy=false,rtcUn=null,rtcPeers={},rtcIceQ={},rtcCandUnsubs={},rtcSid='',vadTimer=null,vadCtx=null,vadAnalysers={},speakingSet=new Set();
+const ICE={iceServers:[
+  {urls:'stun:stun.l.google.com:19302'},
+  {urls:'stun:stun1.l.google.com:19302'},
+  {urls:'stun:stun2.l.google.com:19302'}
+]};
+let micStream=null,micOn=false,micBusy=false,rtcUn=null,rtcPeers={},rtcIceQ={},rtcCandUnsubs={},rtcLastOffer={},rtcLastAnswer={},rtcSid='',vadTimer=null,vadCtx=null,vadAnalysers={},speakingSet=new Set(),audioUnlocked=false;
+
+function unlockRemoteAudio(){
+  audioUnlocked=true;
+  if(vadCtx&&vadCtx.state==='suspended')vadCtx.resume().catch(()=>{});
+  document.querySelectorAll('#vaudio audio').forEach(a=>{
+    a.muted=false;
+    if(a.paused)a.play().catch(()=>{});
+  });
+}
+addEventListener('pointerdown',unlockRemoteAudio,{passive:true});
+addEventListener('keydown',unlockRemoteAudio,{passive:true});
 
 function updateMicUI(){
   const btn=$('#micbtn');
@@ -302,7 +317,7 @@ function attachVad(uid,stream){
           analyser.getByteFrequencyData(data);
           let sum=0;for(let i=0;i<data.length;i++)sum+=data[i];
           const avg=sum/data.length;
-          const active=avg>16;
+          const active=avg>14;
           if(active&&!speakingSet.has(id)){speakingSet.add(id);changed=true}
           else if(!active&&speakingSet.has(id)){speakingSet.delete(id);changed=true}
         }
@@ -322,20 +337,34 @@ function detachVad(uid){
   if(!Object.keys(vadAnalysers).length&&vadTimer){clearInterval(vadTimer);vadTimer=null}
 }
 
+async function bindTrackToPeers(stream){
+  const track=stream.getAudioTracks()[0];
+  if(!track)return;
+  for(const peerUid in rtcPeers){
+    const pc=rtcPeers[peerUid];
+    const audioTransceiver=pc.getTransceivers().find(t=>
+      (t.sender&&t.sender.track&&t.sender.track.kind==='audio')||
+      (t.receiver&&t.receiver.track&&t.receiver.track.kind==='audio')
+    );
+    if(audioTransceiver&&audioTransceiver.sender){
+      await audioTransceiver.sender.replaceTrack(track).catch(()=>{});
+      if(audioTransceiver.direction==='recvonly')audioTransceiver.direction='sendrecv';
+    }else if(!pc.getSenders().some(s=>s.track&&s.track.kind==='audio')){
+      pc.addTrack(track,stream);
+    }
+  }
+}
+
 async function ensureMic(){
-  if(micStream&&micStream.getAudioTracks().some(t=>t.readyState==='live'))return micStream;
+  if(micStream&&micStream.getAudioTracks().some(t=>t.readyState==='live')){
+    await bindTrackToPeers(micStream);
+    return micStream;
+  }
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw'Browser tidak mendukung akses mikrofon (pastikan memakai HTTPS)';
   micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});
   micStream.getAudioTracks().forEach(t=>t.enabled=micOn);
   attachVad(pid,micStream);
-  // Pasang track lokal ke semua peer yang sudah terhubung
-  for(const peerUid in rtcPeers){
-    const pc=rtcPeers[peerUid];
-    const senders=pc.getSenders();
-    micStream.getTracks().forEach(tr=>{
-      if(!senders.some(s=>s.track&&s.track.kind===tr.kind))pc.addTrack(tr,micStream);
-    });
-  }
+  await bindTrackToPeers(micStream);
   return micStream;
 }
 
@@ -343,6 +372,8 @@ function closePeer(peerUid){
   if(rtcCandUnsubs[peerUid]){rtcCandUnsubs[peerUid]();delete rtcCandUnsubs[peerUid]}
   if(rtcPeers[peerUid]){try{rtcPeers[peerUid].close()}catch{}delete rtcPeers[peerUid]}
   delete rtcIceQ[peerUid];
+  delete rtcLastOffer[peerUid];
+  delete rtcLastAnswer[peerUid];
   detachVad(peerUid);
   const el=document.getElementById('va_'+peerUid);
   if(el)el.remove();
@@ -351,7 +382,7 @@ function closePeer(peerUid){
 function stopVoice(){
   rtcUn&&rtcUn();rtcUn=null;
   Object.keys(rtcPeers).forEach(closePeer);
-  rtcPeers={};rtcIceQ={};rtcCandUnsubs={};
+  rtcPeers={};rtcIceQ={};rtcCandUnsubs={};rtcLastOffer={};rtcLastAnswer={};
   if(micStream){micStream.getTracks().forEach(t=>t.stop());micStream=null}
   detachVad(pid);
   micOn=false;micBusy=false;speakingSet.clear();
@@ -368,30 +399,73 @@ async function syncMicState(code=room){
   }catch{}
 }
 
+function playRemoteStream(peerUid,stream){
+  let audio=document.getElementById('va_'+peerUid);
+  if(!audio){
+    audio=document.createElement('audio');
+    audio.id='va_'+peerUid;
+    audio.autoplay=true;
+    audio.playsInline=true;
+    audio.setAttribute('playsinline','');
+    $('#vaudio').appendChild(audio);
+  }
+  audio.muted=false;
+  audio.volume=1;
+  if(audio.srcObject!==stream)audio.srcObject=stream;
+  const tryPlay=(attempt=0)=>{
+    audio.play().catch(()=>{
+      if(attempt<4)setTimeout(()=>tryPlay(attempt+1),500*(attempt+1));
+      else if(!audioUnlocked)toast('Ketuk layar sekali untuk mengaktifkan suara pemain lain');
+    });
+  };
+  tryPlay(0);
+  attachVad(peerUid,stream);
+}
+
+async function sendOfferToPeer(code,peerUid,pc,restartIce=false){
+  if(!code||room!==code||pc.signalingState!=='stable')return;
+  const sigId=[pid,peerUid].sort().join('_');
+  const sigRef=doc(db,'rooms',code,'rtc',sigId);
+  const hasAudioTx=pc.getTransceivers().some(t=>
+    (t.sender&&t.sender.track&&t.sender.track.kind==='audio')||
+    (t.receiver&&t.receiver.track&&t.receiver.track.kind==='audio')
+  );
+  if(!hasAudioTx){
+    pc.addTransceiver('audio',{direction:'sendrecv'});
+  }
+  if(micStream&&micStream.getAudioTracks().some(t=>t.readyState==='live')){
+    await bindTrackToPeers(micStream);
+  }
+  const offer=await pc.createOffer(restartIce?{iceRestart:true}:undefined);
+  await pc.setLocalDescription(offer);
+  rtcLastAnswer[peerUid]='';
+  await setDoc(sigRef,{
+    offer:{type:offer.type,sdp:offer.sdp},
+    answer:null,
+    from:pid,
+    ts:Date.now()
+  });
+}
+
 function getOrCreatePC(code,peerUid){
   if(rtcPeers[peerUid])return rtcPeers[peerUid];
   const pc=new RTCPeerConnection(ICE);
   rtcPeers[peerUid]=pc;
   rtcIceQ[peerUid]=[];
+  rtcLastOffer[peerUid]='';
+  rtcLastAnswer[peerUid]='';
   const sigId=[pid,peerUid].sort().join('_');
 
-  if(micStream){
+  if(micStream&&micStream.getAudioTracks().some(t=>t.readyState==='live')){
     micStream.getTracks().forEach(t=>pc.addTrack(t,micStream));
+  }else{
+    pc.addTransceiver('audio',{direction:'sendrecv'});
   }
 
   pc.ontrack=ev=>{
     const stream=ev.streams[0]||new MediaStream([ev.track]);
-    let audio=document.getElementById('va_'+peerUid);
-    if(!audio){
-      audio=document.createElement('audio');
-      audio.id='va_'+peerUid;
-      audio.autoplay=true;
-      audio.playsInline=true;
-      $('#vaudio').appendChild(audio);
-    }
-    audio.srcObject=stream;
-    audio.play().catch(()=>{});
-    attachVad(peerUid,stream);
+    ev.track.onunmute=()=>playRemoteStream(peerUid,stream);
+    playRemoteStream(peerUid,stream);
   };
 
   pc.onicecandidate=ev=>{
@@ -404,13 +478,21 @@ function getOrCreatePC(code,peerUid){
     }
   };
 
+  pc.oniceconnectionstatechange=()=>{
+    if(pc.iceConnectionState==='failed'&&pid<peerUid&&room===code){
+      sendOfferToPeer(code,peerUid,pc,true).catch(()=>{});
+    }
+  };
+
   pc.onconnectionstatechange=()=>{
-    if(['failed','closed'].includes(pc.connectionState)){
+    if(pc.connectionState==='failed'){
+      if(pid<peerUid&&room===code)sendOfferToPeer(code,peerUid,pc,true).catch(()=>{});
+      else closePeer(peerUid);
+    }else if(pc.connectionState==='closed'){
       closePeer(peerUid);
     }
   };
 
-  // Dengarkan kandidat ICE dari lawan bicara
   rtcCandUnsubs[peerUid]=onSnapshot(
     query(collection(db,'rooms',code,'rtc',sigId,'cands'),where('from','==',peerUid)),
     sn=>{
@@ -445,41 +527,37 @@ async function connectToPeer(code,peerUid){
   const amInitiator=pid<peerUid;
   const pc=getOrCreatePC(code,peerUid);
 
-  if(amInitiator){
-    if(pc.signalingState!=='stable'||pc.localDescription)return;
-    try{
-      // Pastikan ada transceiver audio agar bisa menerima suara walau mic sendiri sedang mati
-      if(!pc.getTransceivers().some(t=>t.receiver&&t.receiver.track&&t.receiver.track.kind==='audio')){
-        pc.addTransceiver('audio',{direction:'sendrecv'});
-      }
-      const offer=await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      await setDoc(sigRef,{
-        offer:{type:offer.type,sdp:offer.sdp},
-        answer:null,
-        from:pid,
-        ts:Date.now()
-      });
-    }catch(e){}
+  if(amInitiator&&!pc.localDescription&&pc.signalingState==='stable'){
+    try{await sendOfferToPeer(code,peerUid,pc,false)}catch{}
   }
 
-  // Pantau dokumen offer/answer pasangan ini
   if(!pc._sigUnsub){
     pc._sigUnsub=onSnapshot(sigRef,async sn=>{
       if(!sn.exists()||room!==code)return;
       const d=sn.data();
       try{
-        if(!amInitiator&&d.offer&&!pc.remoteDescription){
+        // Terima offer baru (termasuk renegotiation saat lawan menyalakan mic)
+        if(d.offer&&d.from&&d.from!==pid&&d.offer.sdp!==rtcLastOffer[peerUid]){
+          rtcLastOffer[peerUid]=d.offer.sdp;
+          if(pc.signalingState==='have-local-offer'){
+            await pc.setLocalDescription({type:'rollback'}).catch(()=>{});
+          }
           await pc.setRemoteDescription(new RTCSessionDescription(d.offer));
           await flushIce(peerUid,pc);
+          if(micStream&&micStream.getAudioTracks().some(t=>t.readyState==='live')){
+            await bindTrackToPeers(micStream);
+          }
           const answer=await pc.createAnswer();
           await pc.setLocalDescription(answer);
           await setDoc(sigRef,{answer:{type:answer.type,sdp:answer.sdp}},{merge:true});
-        }else if(amInitiator&&d.answer&&!pc.remoteDescription){
+        }
+        // Terima answer baru untuk offer yang kita kirim
+        if(d.answer&&d.from===pid&&pc.signalingState==='have-local-offer'&&d.answer.sdp!==rtcLastAnswer[peerUid]){
+          rtcLastAnswer[peerUid]=d.answer.sdp;
           await pc.setRemoteDescription(new RTCSessionDescription(d.answer));
           await flushIce(peerUid,pc);
         }
-      }catch(e){}
+      }catch{}
     },()=>{});
     const origClose=pc.close.bind(pc);
     pc.close=()=>{pc._sigUnsub&&pc._sigUnsub();origClose()};
@@ -508,6 +586,7 @@ function startVoice(code){
 
 async function toggleMic(){
   if(!room||micBusy)return;
+  unlockRemoteAudio();
   if(micOn){
     micOn=false;
     if(micStream)micStream.getAudioTracks().forEach(t=>t.enabled=false);
@@ -524,20 +603,10 @@ async function toggleMic(){
     micStream.getAudioTracks().forEach(t=>t.enabled=true);
     updateMicUI();
     await syncMicState();
-    // Renegosiasi jika koneksi awal dibuat sebelum mic aktif
+    // Renegosiasi ke semua peer aktif tanpa terhambat arah initiator (pid < peerUid)
     for(const peerUid in rtcPeers){
       const pc=rtcPeers[peerUid];
-      if(pc.signalingState==='stable'){
-        const sigId=[pid,peerUid].sort().join('_');
-        const offer=await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        await setDoc(doc(db,'rooms',room,'rtc',sigId),{
-          offer:{type:offer.type,sdp:offer.sdp},
-          answer:null,
-          from:pid,
-          ts:Date.now()
-        });
-      }
+      await sendOfferToPeer(room,peerUid,pc,false).catch(()=>{});
     }
     toast('Mikrofon aktif — pemain lain bisa mendengarmu');
   }catch(e){
