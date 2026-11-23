@@ -161,6 +161,9 @@ input,textarea{-webkit-user-select:text;user-select:text}
 .c.dr{cursor:pointer;transition:transform .16s cubic-bezier(.2,.9,.3,1.5)}
 .c.dr:hover{transform:translateY(-4px) scale(1.07)}
 .c.dr:active{transform:scale(.93);transition-duration:.06s}
+.spk{box-shadow:0 0 0 3px var(--G)!important}
+.von{box-shadow:0 0 0 2px var(--G)}
+.vm{background:var(--R);color:#fff}
 </style>
 </head>
 <body>
@@ -168,6 +171,7 @@ input,textarea{-webkit-user-select:text;user-select:text}
 <div id="toast"></div>
 <div id="ntf" role="alert"></div>
 <div id="pnl"></div>
+<div id="vc" style="position:fixed;left:-9999px;top:0"></div>
 <script>
 (function(){var show=function(m){var a=document.getElementById('app');if(a&&!window.__ok)a.innerHTML='<p style="padding:20px;color:#c0392b;font:15px system-ui">'+m+'</p>'};
 addEventListener('error',function(e){show('Game gagal dimuat: '+(e.message||'skrip tidak bisa diunduh (Firebase SDK terblokir atau tidak ada internet).'))},true);
@@ -177,7 +181,8 @@ setTimeout(function(){show('Game belum termuat. Cek internet, buka file lewat ho
 const CFG={apiKey:"AIzaSyDF5n9QLR136niB935lG8ThtkI0lgfzaVY",authDomain:"game-5d4ed.firebaseapp.com",projectId:"game-5d4ed",storageBucket:"game-5d4ed.firebasestorage.app",messagingSenderId:"817751327735",appId:"1:817751327735:web:fa1a24d4f232e62f7ae4f2",measurementId:"G-CD48QGV9TZ"};
 let initializeApp,getFirestore,doc,setDoc,onSnapshot,runTransaction,deleteDoc,getDoc,getDocs,collection,query,orderBy,limit,increment,addDoc,getAuth,signInAnonymously,db,auth;
 
-const APP_VER='12'; // naikkan setiap rilis; dipakai untuk mendeteksi versi baru
+const APP_VER='13';
+const VOICE_API='https://uno-game.jubandewan.workers.dev'; // isi dengan URL Worker penerbit token LiveKit, mis. https://uno-voice.namamu.workers.dev (lihat voice-worker.js) // naikkan setiap rilis; dipakai untuk mendeteksi versi baru
 const $=s=>document.querySelector(s);
 const st={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch{}}};
 let pid=null,authErr=null,ct,sdkMsg='Memuat Firebase…',sdkErr=''; // pid = uid Firebase Auth (anonim), diisi setelah login berhasil
@@ -210,7 +215,8 @@ function deal(s){
   if(s.host!==pid)throw'Hanya host yang bisa memulai';
   if(s.players.length<2)throw'Minimal 2 pemain';
   s.draw=mkDeck();s.dir=1;s.drew=false;s.winner=null;s.log='Permainan dimulai!';
-  s.players.forEach(p=>{p.hand=[];p.rank=0;p.w=0;p.l=0;p.n=s.players.length;take(s,p,7)}); // w=1: penonton, n: jumlah pemain awal
+  const gid=Math.random().toString(36).slice(2,9); // id unik tiap permainan, dipakai agar skor dicatat tepat sekali
+  s.players.forEach(p=>{p.hand=[];p.rank=0;p.w=0;p.l=0;p.g=gid;p.n=s.players.length;take(s,p,7)}); // w=1: penonton, n: jumlah pemain awal
   let c;do{c=s.draw.pop();if(c==='WF')s.draw.unshift(c)}while(c==='WF');
   s.discard=[c];s.color=c[0]==='W'?'RYGB'[Math.random()*4|0]:c[0];
   const n=s.players.length;s.turn=((Math.random()*n|0)+n-1)%n;eff(s,c);s.status='playing'; // pemain pertama acak
@@ -273,11 +279,11 @@ function enter(code){
     S=sn.data();
     if(!S.players.some(p=>p.id===pid)){const l=leaving;detach();if(!l)toast('Kamu tidak lagi berada di room');return}
     if(!rcUn)listenRoomChat(code);
-    render();fx(prev,S);
-    if(S.status==='finished'&&(!prev||prev.status!=='finished'))recordGame(S)
+    try{recordGame(S)}catch(e){console.error(e)} // skor dicatat lebih dulu & tidak terhalang error tampilan
+    try{render();fx(prev,S)}catch(e){console.error(e)}
   },e=>{detach();toast('Firestore error: '+e.code)})
 }
-function detach(){unsub&&unsub();unsub=null;rcUn&&rcUn();rcUn=null;rcMsgs=[];rcUnread=0;if(rcOpen){PN().innerHTML='';rcOpen=false}leaving=false;room=null;S=null;pick=null;st.set('room',null);render()}
+function detach(){voiceLeave();unsub&&unsub();unsub=null;rcUn&&rcUn();rcUn=null;rcMsgs=[];rcUnread=0;if(rcOpen){PN().innerHTML='';rcOpen=false}leaving=false;room=null;S=null;pick=null;st.set('room',null);render()}
 const myName=()=>{if(!pid){toast('Menghubungkan ke server…');return null}if(!ME){toast('Masuk dengan username dulu');return null}return ME.name};
 
 const A=window.A={
@@ -312,7 +318,7 @@ const A=window.A={
   draw:()=>act(drawCard),
   snd(){mute=!mute;st.set('mute',mute?'1':'0');render();sfx('turn')},
   pass:()=>act(s=>{if(!s.drew||s.players[s.turn].id!==pid)throw'Tidak bisa melewati';adv(s)}),
-  again:()=>act(s=>{if(s.host!==pid)throw'Hanya host';s.status='lobby';s.players.forEach(p=>{p.hand=[];p.rank=0;p.w=0;p.l=0})})
+  again:()=>act(s=>{if(s.host!==pid)throw'Hanya host';s.status='lobby';s.players.forEach(p=>{p.hand=[];p.w=0})}) // peringkat & id permainan dipertahankan sampai permainan berikutnya, supaya skor tetap bisa dicatat
 };
 
 /* ===== Suara (sintesis WebAudio, tanpa file) ===== */
@@ -413,14 +419,15 @@ async function login(){
     C.set('me',ME);bump();render();listenInbox()
   }catch(e){err(errMsg(e))}
 }
-async function recordGame(S){
-  const i=S.players.findIndex(p=>p.id===pid);if(!ME||i<0)return;
-  const r=S.players[i].rank,n=S.players[i].n||S.players.length;if(!r)return;
-  const sig=room+':'+S.players.map(p=>p.rank).join('')+':'+S.discard.length;if(C.get('last')===sig)return;C.set('last',sig);
-  const pts=Math.max(0,n-r)*10+(r===1?10:0),w=r===1?1:0;
-  try{await setDoc(doc(db,'players',pid),{games:increment(1),wins:increment(w),points:increment(pts)},{merge:true});
-    ME={...ME,games:ME.games+1,wins:ME.wins+w,points:ME.points+pts};C.set('me',ME);bump();toast('+'+pts+' poin')}
-  catch(e){C.set('last',null)}
+async function recordGame(S){ // dipanggil di setiap pembaruan room; mencatat skor tepat sekali per permainan (berdasarkan id permainan)
+  const mp=S.players.find(p=>p.id===pid);
+  if(!ME||!mp||!mp.g||!(mp.rank>0)||S.status==='playing'||C.get('rg')===mp.g)return;
+  C.set('rg',mp.g);
+  const r=mp.rank,n=mp.n||S.players.length,pts=Math.max(0,n-r)*10+(r===1?10:0),w=r===1?1:0;
+  try{
+    await setDoc(doc(db,'players',pid),{games:increment(1),wins:increment(w),points:increment(pts)},{merge:true});
+    ME={...ME,games:ME.games+1,wins:ME.wins+w,points:ME.points+pts};C.set('me',ME);C.set('lb',null);bump();toast('+'+pts+' poin')
+  }catch(e){C.set('rg',null);toast('Gagal mencatat skor: '+errMsg(e))}
 }
 async function getLB(){
   const v=await ver(),c=C.get('lb');if(c&&c.v===v)return{rows:c.rows,src:'cache'};
@@ -662,6 +669,54 @@ if('serviceWorker' in navigator){const had=!!navigator.serviceWorker.controller;
 addEventListener('appinstalled',()=>{dip=null;const b=$('#inst');if(b)b.hidden=true});
 if('serviceWorker' in navigator&&location.protocol.startsWith('http'))addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 
+/* ===== Voice (LiveKit): hanya aktif di dalam room ===== */
+let vLK=null,vRoom=null,vOn=false,vMuted=false,vBusy=false,vSess=0,speakers=new Set(),vPeers=new Set();
+async function loadLK(){ // library dimuat hanya saat voice dipakai
+  if(vLK)return vLK;const bad=[];
+  for(const u of['https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.esm.mjs','https://esm.sh/livekit-client@2']){
+    try{vLK=await import(u);return vLK}catch(e){bad.push(new URL(u).host)}
+  }
+  throw new Error('Library voice gagal dimuat ('+bad.join(', ')+')')
+}
+const voiceBtns=()=>vBusy?'<button class="ib" disabled aria-label="Menghubungkan voice">⏳</button>'
+  :!vOn?'<button class="ib" onclick="A.voice()" aria-label="Gabung voice" title="Gabung voice">🎙</button>'
+  :`<button class="ib ${vMuted?'vm':'von'}" onclick="A.voice()" aria-label="${vMuted?'Aktifkan mikrofon':'Matikan mikrofon'}">${vMuted?'🔇':'🎙'}</button><button class="ib" onclick="A.vleave()" aria-label="Keluar voice">✕</button>`;
+const updVoice=()=>{const g=$('#vgrp');if(g)g.innerHTML=voiceBtns()};
+const updSpeak=()=>document.querySelectorAll('[data-u]').forEach(e=>e.classList.toggle('spk',speakers.has(e.dataset.u)));
+function updPeers(){vPeers=new Set(vRoom?[...vRoom.remoteParticipants.values()].map(p=>p.identity):[]);if(vOn)vPeers.add(pid);if(room&&S)render()}
+function voiceCleanup(){vRoom=null;vOn=false;vMuted=false;vBusy=false;speakers=new Set();vPeers=new Set();const c=$('#vc');if(c)c.innerHTML='';updVoice();updSpeak()}
+function voiceLeave(){vSess++;const r=vRoom;vRoom=null;if(r){try{r.disconnect()}catch{}}voiceCleanup()}
+async function voiceJoin(){
+  if(vBusy||vOn||!room||!S)return; // voice hanya bisa dipakai setelah room dibuat/dimasuki
+  if(!VOICE_API){toast('Voice belum disiapkan: isi VOICE_API di index.html (lihat voice-worker.js)');return}
+  const my=++vSess,code=room;vBusy=true;updVoice();
+  try{
+    const[lk,idt]=await Promise.all([loadLK(),auth.currentUser.getIdToken()]);
+    const r=await fetch(VOICE_API,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+idt},body:JSON.stringify({room:code})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(j.error||'Token ditolak ('+r.status+')');
+    const rm=new lk.Room({audioCaptureDefaults:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}}),E=lk.RoomEvent;
+    rm.on(E.TrackSubscribed,t=>{if(t.kind==='audio')$('#vc').appendChild(t.attach())});
+    rm.on(E.TrackUnsubscribed,t=>t.detach().forEach(e=>e.remove()));
+    rm.on(E.ActiveSpeakersChanged,sp=>{speakers=new Set(sp.map(x=>x.identity));updSpeak()});
+    rm.on(E.ParticipantConnected,updPeers);rm.on(E.ParticipantDisconnected,updPeers);
+    rm.on(E.Disconnected,()=>{if(vRoom===rm){voiceCleanup();if(room&&S)render()}});
+    await rm.connect(j.url,j.token);
+    if(my!==vSess||room!==code){rm.disconnect();return}
+    vRoom=rm;vOn=true;vMuted=false;
+    await rm.startAudio().catch(()=>{});
+    try{await rm.localParticipant.setMicrophoneEnabled(true)}catch(e){vMuted=true;toast('Mikrofon tidak bisa dipakai — kamu hanya mendengarkan')}
+    updPeers()
+  }catch(e){toast('Voice gagal: '+(e.message||e))}
+  finally{if(my===vSess){vBusy=false;updVoice()}}
+}
+async function voiceMute(){
+  if(!vRoom)return;
+  try{await vRoom.localParticipant.setMicrophoneEnabled(vMuted);vMuted=!vMuted}catch(e){toast('Mikrofon tidak bisa dipakai')}
+  updVoice()
+}
+Object.assign(A,{voice(){vOn?voiceMute():voiceJoin()},vleave(){voiceLeave()}});
+
 /* ===== Tampilan ===== */
 const card=(c,col,cls='',at='')=>{ // kartu ala UNO asli: sisi berwarna, oval putih, angka besar, angka kecil di sudut
   const w=c[0]==='W',cc=w&&!col?'W':col||c[0],l=lab(c),big=w&&!col?(c==='WF'?'+4':''):l,cor=w&&!col&&c!=='WF'?'':l;
@@ -681,12 +736,12 @@ function render(){
     <div id="stat" class="mut"></div><div class="mut" style="font-size:12px">uno v${APP_VER}</div></div>`;
     stat();return
   }
-  const bar=`<div class="bar"><span class="row"><button class="ib" onclick="A.rchat()" aria-label="Chat room">💬<span class="dot rc" ${rcUnread?'':'hidden'}>${rcUnread>9?'9+':rcUnread}</span></button><span class="mut">Room <b>${room}</b></span></span><button onclick="A.leave()">${S.host===pid?'Tutup room':'Keluar'}</button></div>`;
+  const bar=`<div class="bar"><span class="row"><button class="ib" onclick="A.rchat()" aria-label="Chat room">💬<span class="dot rc" ${rcUnread?'':'hidden'}>${rcUnread>9?'9+':rcUnread}</span></button><span id="vgrp" class="row">${voiceBtns()}</span><span class="mut">Room <b>${room}</b></span></span><button onclick="A.leave()">${S.host===pid?'Tutup room':'Keluar'}</button></div>`;
   if(S.status==='lobby'){
     const host=S.host===pid;
     el.innerHTML=`${bar}${navHTML()}<div class="col"><div class="code">${room}</div>
     <p class="mut">Bagikan kode ini ke teman-temanmu. Pemain: ${S.players.length}/10</p>
-    <ul class="list">${S.players.map(p=>`<li><span>${esc(p.name)}${p.id===pid?' (kamu)':''}</span>${p.id===S.host?'<span class="mut">host</span>':''}</li>`).join('')}</ul>
+    <ul class="list">${S.players.map(p=>`<li data-u="${p.id}" class="${speakers.has(p.id)?'spk':''}"><span>${esc(p.name)}${p.id===pid?' (kamu)':''}${vPeers.has(p.id)?' 🎙':''}</span>${p.id===S.host?'<span class="mut">host</span>':''}</li>`).join('')}</ul>
     ${host?`<button class="p" onclick="A.start()" ${S.players.length<2?'disabled':''}>${S.players.length<2?'Tunggu minimal 2 pemain':'Mulai permainan'}</button>`:'<p class="mut">Menunggu host memulai…</p>'}</div>`;
     return
   }
@@ -697,7 +752,7 @@ function render(){
   const order=me.hand.map((c,i)=>[c,i]).sort((a,b)=>a[0]<b[0]?-1:1);
   const tot=S.players.length,tp=S.players.filter(x=>!x.w).length,m=tot-1,opp=Array.from({length:m},(_,k)=>(meI+1+k)%tot);
   const seat=(i,k)=>{const p=S.players[i],t=m>1?k/(m-1)*2-1:0,c=p.hand.length,f=Math.min(c,7);
-    return `<div class="seat ${play&&i===S.turn?'t':''} ${play&&!c?'done':''}" data-p="${i}" style="transform:rotate(${(t*9).toFixed(1)}deg) translateY(${(t*t*14).toFixed(0)}px)"><div class="tag"><span>${esc(p.name)}</span><b>${p.w?'tonton':play&&!c?'#'+p.rank:c}</b>${c===1?'<em>UNO!</em>':''}</div><div class="fan">${Array.from({length:f},(_,j)=>`<div class="c back mini" style="margin-left:${j?'calc(var(--cw)*-.36)':0};transform:rotate(${((j-(f-1)/2)*7).toFixed(1)}deg)"></div>`).join('')}</div></div>`};
+    return `<div class="seat ${play&&i===S.turn?'t':''} ${play&&!c?'done':''}" data-p="${i}" style="transform:rotate(${(t*9).toFixed(1)}deg) translateY(${(t*t*14).toFixed(0)}px)"><div class="tag ${speakers.has(p.id)?'spk':''}" data-u="${p.id}"><span>${esc(p.name)}${vPeers.has(p.id)?' 🎙':''}</span><b>${p.w?'tonton':play&&!c?'#'+p.rank:c}</b>${c===1?'<em>UNO!</em>':''}</div><div class="fan">${Array.from({length:f},(_,j)=>`<div class="c back mini" style="margin-left:${j?'calc(var(--cw)*-.36)':0};transform:rotate(${((j-(f-1)/2)*7).toFixed(1)}deg)"></div>`).join('')}</div></div>`};
   const ring=`<div class="ringw" style="transform:scaleX(${S.dir})"><svg class="ring" style="animation-delay:-${((Date.now()/1000)%8).toFixed(2)}s" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"><defs><marker id="ah" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto"><path d="M0 0L10 5L0 10z" fill="currentColor" stroke="none"/></marker></defs><path d="M16 30A40 40 0 0 1 84 30" marker-end="url(#ah)"/><path d="M84 70A40 40 0 0 1 16 70" marker-end="url(#ah)"/></svg></div>`;
   el.innerHTML=`<div class="gm">${bar}
   <div class="seats">${opp.map(seat).join('')}</div>
@@ -705,7 +760,7 @@ function render(){
     <div class="pile"><div id="dp" class="c back big ${canDraw?'dr':''} ${canDraw&&!any?'go':''}" ${canDraw?'onclick="A.draw()" role="button" tabindex="0"':''}></div>${S.draw.length}${canDraw?' · ambil':''}</div>
     <div id="disc">${card(top(S),S.color,'big')}</div></div>
     <div class="log">${esc(S.log)}</div><div class="st">${msg}</div></div>
-  <div class="me ${mine?'t':''}"><div class="mehead"><div class="tag"><span>${esc(me.name)} (kamu)</span><b>${me.w?'tonton':play&&!n?'#'+me.rank:n}</b>${n===1?'<em>UNO!</em>':''}</div>${mine&&S.drew?'<button onclick="A.pass()">Lewati</button>':''}</div>
+  <div class="me ${mine?'t':''}"><div class="mehead"><div class="tag ${speakers.has(me.id)?'spk':''}" data-u="${me.id}"><span>${esc(me.name)} (kamu)${vPeers.has(me.id)?' 🎙':''}</span><b>${me.w?'tonton':play&&!n?'#'+me.rank:n}</b>${n===1?'<em>UNO!</em>':''}</div>${mine&&S.drew?'<button onclick="A.pass()">Lewati</button>':''}</div>
   ${play&&!n?`<div class="spec">${me.w?'Kamu menonton permainan ini.<br>Kamu ikut main saat host menekan Main lagi.':`Kamu selesai di peringkat #${me.rank}.<br>Kamu menonton sampai permainan berakhir.`}</div>`:''}<div class="hand">${order.map(([c,i],k)=>card(c,'',mine?(can(i)?'on':'off'):'',`data-i="${i}" style="margin-left:${k?mg:0}px"${can(i)?` onclick="A.tap(${i},event)"`:''}`)).join('')}</div></div></div>
   ${pick!==null?`<div class="ov"><div><b>Pilih warna</b><div class="cp">${['R','Y','G','B'].map(c=>`<button data-c="${c}" style="background:var(--${c})" onclick="A.col('${c}')">${COL[c]}</button>`).join('')}</div><p><button onclick="A.cancel()">Batal</button></p></div></div>`:''}
   ${S.status==='finished'?`<div class="ov"><div><h2 style="margin:0 0 6px">${me.w?'Permainan selesai':me.rank===1?'Kamu juara 1!':me.l?'Kamu kalah':'Kamu peringkat #'+me.rank}</h2><p class="mut" style="margin:0 0 8px">${esc(S.log||'')}</p>
