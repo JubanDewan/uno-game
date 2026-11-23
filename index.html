@@ -150,11 +150,18 @@ button:not(:disabled):active{transform:translateY(0) scale(.96);box-shadow:none}
 .ths{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:6px 0 12px}
 .th{height:56px;padding:0 0 4px;border:3px solid transparent;font-size:11px;font-weight:700;color:#222;display:grid;place-items:end center}
 .th.d{color:#eee}.th.sel{border-color:var(--fg)}
+#ntf{position:fixed;left:50%;top:12px;transform:translate(-50%,-160%);background:var(--fg);color:var(--bg);padding:11px 16px;border-radius:12px;font-size:14px;font-weight:600;max-width:92vw;box-shadow:0 8px 24px #0005;cursor:pointer;opacity:0;pointer-events:none;transition:transform .25s,opacity .2s,filter .15s;z-index:110}
+#ntf.s{transform:translate(-50%,0);opacity:1;pointer-events:auto}
+#ntf:hover{filter:brightness(1.18)}
+.ib{position:relative}
+.ib .dot{position:absolute;top:-6px;right:-6px;margin:0;min-width:18px;height:18px;padding:0 4px;display:grid;place-items:center;font-size:10px;line-height:1}
+.msg small{display:block;font-size:11px;font-weight:700;margin-bottom:1px}
 </style>
 </head>
 <body>
 <div id="app"><p class="mut" style="padding:20px">Memuat…</p></div>
 <div id="toast"></div>
+<div id="ntf" role="alert"></div>
 <div id="pnl"></div>
 <script>
 (function(){var show=function(m){var a=document.getElementById('app');if(a&&!window.__ok)a.innerHTML='<p style="padding:20px;color:#c0392b;font:15px system-ui">'+m+'</p>'};
@@ -249,7 +256,10 @@ async function act(fn,code=room){
     });return true
   }catch(e){toast(typeof e==='string'?e:'Gagal: '+(e.code||e.message));sfx('err');return false}
 }
-const delRoom=async c=>{try{await deleteDoc(doc(db,'rooms',c));return true}catch(e){return false}};
+const delRoom=async c=>{ // tutup room: riwayat chat ikut dihapus
+  try{const q=await getDocs(collection(db,'rooms',c,'chat'));await Promise.all(q.docs.map(d=>deleteDoc(doc(db,'rooms',c,'chat',d.id))))}catch(e){/* hapus semampunya */}
+  try{await deleteDoc(doc(db,'rooms',c));return true}catch(e){return false}
+};
 function enter(code){
   room=code;st.set('room',code);unsub&&unsub();
   unsub=onSnapshot(doc(db,'rooms',code),sn=>{
@@ -257,11 +267,12 @@ function enter(code){
     if(!sn.exists()){const l=leaving;detach();if(!l)toast('Room ditutup oleh host');return} // host menutup room: semua anggota otomatis keluar
     S=sn.data();
     if(!S.players.some(p=>p.id===pid)){const l=leaving;detach();if(!l)toast('Kamu tidak lagi berada di room');return}
+    if(!rcUn)listenRoomChat(code);
     render();fx(prev,S);
     if(S.status==='finished'&&(!prev||prev.status!=='finished'))recordGame(S)
   },e=>{detach();toast('Firestore error: '+e.code)})
 }
-function detach(){unsub&&unsub();unsub=null;leaving=false;room=null;S=null;pick=null;st.set('room',null);render()}
+function detach(){unsub&&unsub();unsub=null;rcUn&&rcUn();rcUn=null;rcMsgs=[];rcUnread=0;if(rcOpen){PN().innerHTML='';rcOpen=false}leaving=false;room=null;S=null;pick=null;st.set('room',null);render()}
 const myName=()=>{if(!pid){toast('Menghubungkan ke server…');return null}if(!ME){toast('Masuk dengan username dulu');return null}return ME.name};
 
 const A=window.A={
@@ -427,7 +438,7 @@ async function findUser(q){
   return{uid:d.id,...d.data()}
 }
 const PN=()=>$('#pnl');
-const panel=(t,b)=>{PN().innerHTML=`<div class="ov" onclick="if(event.target===this)A.close()"><div class="pn"><div class="bar"><b>${t}</b><button onclick="A.close()">Tutup</button></div>${b}</div></div>`};
+const panel=(t,b)=>{rcOpen=false;PN().innerHTML=`<div class="ov" onclick="if(event.target===this)A.close()"><div class="pn"><div class="bar"><b>${t}</b><button onclick="A.close()">Tutup</button></div>${b}</div></div>`};
 const urow=(x,extra='',rank='')=>`<li class="${x.uid===pid?'you':''}">${rank}${avatar(x)}<span><b>${esc(x.name)}</b><small class="mut">${esc(x.username)}</small></span>${extra}</li>`;
 async function openLB(tab='all'){
   panel('Papan peringkat',`<div class="tabs"><button class="${tab==='all'?'p':''}" onclick="A.lb('all')">Global</button><button class="${tab==='fr'?'p':''}" onclick="A.lb('fr')">Teman</button></div><div id="pb" class="mut">Memuat…</div>`);
@@ -512,25 +523,62 @@ function applyTheme(id){
 }
 applyTheme(THEME);
 const inApp=()=>matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
-const navHTML=()=>`<div class="top"><button class="ib burger" onclick="A.nav()" aria-label="Menu">${navOpen?'✕':'☰'}</button><button class="ib" onclick="A.panel('st')" aria-label="Pengaturan">⚙</button></div><div class="navl ${navOpen?'open':''}"><button onclick="A.panel('lb')">Peringkat</button><button onclick="A.panel('fr')">Teman<span class="dot nb" ${NB?'':'hidden'}>${NB}</span></button><button onclick="A.panel('pf')">Profil</button></div>`;
+const navHTML=home=>`<div class="top"><button class="ib burger" onclick="A.nav()" aria-label="Menu">${navOpen?'✕':'☰'}</button>${home?`<button class="ib" onclick="A.panel('st')" aria-label="Pengaturan">⚙</button>`:''}</div><div class="navl ${navOpen?'open':''}"><button onclick="A.panel('lb')">Peringkat</button><button onclick="A.panel('fr')">Teman<span class="dot nb" ${NB?'':'hidden'}>${NB}</span></button><button onclick="A.panel('pf')">Profil</button></div>`;
 const updBadge=()=>document.querySelectorAll('.nb').forEach(e=>{e.textContent=NB;e.hidden=!NB});
 const hero=()=>`<div class="hero">${[['WW',-22,16],['GS',-13,6],['RS',-5,0],['R3',4,0],['B2',12,6],['Y3',21,16]].map(([c,r,y])=>card(c,'','',`style="--r:${r}deg;--y:${y}px"`)).join('')}</div>`;
 const delInbox=k=>deleteDoc(doc(db,'players',pid,'inbox',k)).catch(()=>{});
 const osOn=()=>C.get('os')===1&&'Notification' in window&&Notification.permission==='granted';
-function osNotify(t,b){ // notifikasi sistem hanya saat aplikasi terbuka di latar belakang
+async function osNotify(t,b,act){ // notifikasi sistem hanya saat aplikasi terbuka di latar belakang; klik -> buka sumbernya
   if(!document.hidden||!osOn())return;
-  try{const o={body:b,icon:'icon-192.png'};navigator.serviceWorker&&navigator.serviceWorker.ready?navigator.serviceWorker.ready.then(r=>r.showNotification(t,o)):new Notification(t,o)}catch{}
+  try{
+    const o={body:b,icon:'icon-192.png',data:{act:act||''}};
+    const reg=navigator.serviceWorker?await navigator.serviceWorker.getRegistration().catch(()=>null):null;
+    if(reg)await reg.showNotification(t,o); // klik ditangani sw.js
+    else{const x=new Notification(t,o);x.onclick=()=>{window.focus();goTo(act)}}
+  }catch{}
+}
+let rcUn=null,rcMsgs=[],rcUnread=0,rcOpen=false,rcFirst=true,ntT;
+const goTo=a=>{ // tujuan notifikasi: 'friends' | 'chat:UID' | 'rchat'
+  if(!a)return;
+  if(a==='friends')openFriends();
+  else if(a.startsWith('chat:'))openChat(a.slice(5));
+  else if(a==='rchat'&&room)openRoomChat()
+};
+function notify(msg,act,title){ // banner yang bisa diklik
+  const n=$('#ntf');n.textContent=msg;n.onclick=()=>{n.className='';goTo(act)};n.className='s';
+  clearTimeout(ntT);ntT=setTimeout(()=>n.className='',6000);sfx('turn');osNotify(title||'UNO',msg,act)
+}
+const updRc=()=>document.querySelectorAll('.rc').forEach(e=>{e.textContent=rcUnread>9?'9+':rcUnread;e.hidden=!rcUnread});
+function renderRC(){
+  const el=$('#rcm');if(!el)return;el.className='cm';
+  el.innerHTML=rcMsgs.length?rcMsgs.map(m=>`<div class="msg ${m.from===pid?'out':''}">${m.from===pid?'':`<small class="mut">${esc(m.name)}</small>`}${esc(m.text)}</div>`).join(''):'<span class="mut">Belum ada pesan. Sapa pemain lain!</span>';
+  el.scrollTop=el.scrollHeight
+}
+function listenRoomChat(code){
+  rcUn&&rcUn();rcMsgs=[];rcUnread=0;rcFirst=true;
+  rcUn=onSnapshot(query(collection(db,'rooms',code,'chat'),orderBy('ts','desc'),limit(50)),sn=>{
+    rcMsgs=sn.docs.map(d=>d.data()).reverse();
+    if(rcFirst){rcFirst=false;updRc();return}
+    const fresh=sn.docChanges().filter(c=>c.type==='added'&&c.doc.data().from!==pid).map(c=>c.doc.data());
+    if(rcOpen)renderRC();
+    else if(fresh.length){rcUnread+=fresh.length;updRc();const x=fresh[fresh.length-1];notify(x.name+': '+x.text,'rchat','Chat room')}
+  },()=>{})
+}
+function openRoomChat(){
+  chatUn&&chatUn();chatUn=null;chatWith=null;
+  panel('Chat room '+esc(room),`<div id="rcm" class="cm mut">Memuat…</div><div class="row" style="margin-top:8px"><input id="rci" maxlength="200" placeholder="Tulis pesan…" autocomplete="off" onkeydown="if(event.key==='Enter')A.rsend()"><button class="p" onclick="A.rsend()">Kirim</button></div><div class="mut" style="font-size:12px;margin-top:6px">Riwayat chat dihapus saat room ditutup.</div>`);
+  rcOpen=true;rcUnread=0;updRc();renderRC()
 }
 function listenInbox(){
   unsubIn&&unsubIn();firstSnap=true;
   unsubIn=onSnapshot(collection(db,'players',pid,'inbox'),sn=>{
     inbox={};sn.docs.forEach(d=>inbox[d.id]={...d.data(),key:d.id});NB=sn.docs.length;updBadge();
-    if(firstSnap){firstSnap=false;if(NB)toast('Kamu punya '+NB+' notifikasi baru');return}
+    if(firstSnap){firstSnap=false;if(NB)notify('Kamu punya '+NB+' notifikasi baru — ketuk untuk membuka','friends','UNO');return}
     sn.docChanges().forEach(c=>{
       if(c.type==='removed')return;const x=c.doc.data();
       if(x.type==='chat'&&chatWith===x.from){delInbox('c_'+x.from);return}
       const m=x.type==='chat'?x.name+': '+x.text:x.name+' ('+x.username+') '+x.text;
-      toast(m);sfx('turn');osNotify(x.type==='chat'?'Pesan baru':'Teman baru',m)
+      notify(m,x.type==='chat'?'chat:'+x.from:'friends',x.type==='chat'?'Pesan baru':'Teman baru')
     });
     if($('#fl'))listFriends()
   },()=>{})
@@ -542,7 +590,8 @@ function openSettings(){
   <p class="mut" style="font-size:12px">Notifikasi sistem muncul saat aplikasi terbuka di latar belakang. Notifikasi di dalam aplikasi selalu aktif.</p>`)
 }
 async function openChat(uid){
-  const f=(C.get('fr')||{rows:[]}).rows.find(r=>r.uid===uid)||{name:'Teman'};
+  let f=(C.get('fr')||{rows:[]}).rows.find(r=>r.uid===uid)||(inbox['c_'+uid]&&{name:inbox['c_'+uid].name});
+  if(!f){try{const d=await getDoc(doc(db,'players',uid));f=d.exists()?d.data():{name:'Teman'}}catch{f={name:'Teman'}}}
   chatWith=uid;delInbox('c_'+uid);chatUn&&chatUn();
   panel('Chat · '+esc(f.name),`<div id="cm" class="cm mut">Memuat…</div><div class="row" style="margin-top:8px"><input id="ci" maxlength="300" placeholder="Tulis pesan…" autocomplete="off" onkeydown="if(event.key==='Enter')A.send('${uid}')"><button class="p" onclick="A.send('${uid}')">Kirim</button></div><div id="ch" class="mut" style="font-size:12px;margin-top:6px"></div>`);
   try{const g=await getDoc(doc(db,'players',uid,'friends',pid));if(!g.exists()&&$('#ch'))$('#ch').textContent='Chat aktif setelah '+f.name+' menambahkanmu kembali.'}catch{}
@@ -553,8 +602,12 @@ async function openChat(uid){
 }
 Object.assign(A,{
   nav(){navOpen=!navOpen;document.querySelectorAll('.navl').forEach(e=>e.classList.toggle('open',navOpen));document.querySelectorAll('.burger').forEach(b=>b.textContent=navOpen?'✕':'☰')},
-  panel(n){n==='lb'?openLB('all'):n==='fr'?openFriends():n==='st'?openSettings():openProfile()},
-  close(){chatUn&&chatUn();chatUn=null;chatWith=null;PN().innerHTML=''},
+  panel(n){if(n==='st'&&room)return; // pengaturan & suara hanya di tampilan awal
+    n==='lb'?openLB('all'):n==='fr'?openFriends():n==='st'?openSettings():openProfile()},
+  rchat:openRoomChat,
+  async rsend(){const el=$('#rci'),t=el.value.trim();if(!t||!room)return;el.value='';
+    try{await addDoc(collection(db,'rooms',room,'chat'),{from:pid,name:ME.name,text:t,ts:Date.now()})}catch(e){toast(errMsg(e))}},
+  close(){chatUn&&chatUn();chatUn=null;chatWith=null;rcOpen=false;PN().innerHTML=''},
   theme(id){THEME=id;C.set('theme',id);applyTheme(id);openSettings()},
   snd2(){mute=!mute;st.set('mute',mute?'1':'0');const b=$('#sb');if(b)b.textContent=mute?'Suara: mati':'Suara: menyala';if(!mute)sfx('turn')},
   async notif(){
@@ -584,6 +637,7 @@ Object.assign(A,{
   async install(){if(!dip)return;dip.prompt();await dip.userChoice.catch(()=>{});dip=null;const b=$('#inst');if(b)b.hidden=true}
 });
 addEventListener('beforeinstallprompt',e=>{e.preventDefault();dip=e;const b=$('#inst');if(b&&!inApp())b.hidden=false}); // tombol hanya ada di layar awal
+if('serviceWorker' in navigator)navigator.serviceWorker.addEventListener('message',e=>{if(e.data&&e.data.type==='go')goTo(e.data.act)}); // klik notifikasi sistem
 addEventListener('appinstalled',()=>{dip=null;const b=$('#inst');if(b)b.hidden=true});
 if('serviceWorker' in navigator&&location.protocol.startsWith('http'))addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 
@@ -599,14 +653,14 @@ function render(){
     <div class="col"><input id="un" placeholder="@username" maxlength="17" autocapitalize="none" autocomplete="off"><input id="nm" placeholder="Nama tampilan (bisa diubah nanti)" maxlength="14" autocomplete="off">
     <button class="p need" onclick="A.login()">Masuk / Daftar</button><div id="lerr" style="color:var(--R);font-size:14px"></div>
     <p class="mut" style="font-size:13px;margin:0">Username unik dan terkunci di perangkat ini. Memakainya di perangkat lain akan ditolak.</p><div id="stat" class="mut"></div></div>`
-    :navHTML()+h+`<div class="who">${avatar(ME,40)}<span><b>${esc(ME.name)}</b><br><small class="mut">${esc(ME.username)}</small></span></div>
+    :navHTML(1)+h+`<div class="who">${avatar(ME,40)}<span><b>${esc(ME.name)}</b><br><small class="mut">${esc(ME.username)}</small></span></div>
     <div class="col"><button class="p need" onclick="A.create()">Buat room baru</button>
     <div class="row"><input id="code" placeholder="Kode room" maxlength="4" autocapitalize="characters" autocomplete="off"><button class="need" onclick="A.join()">Gabung</button></div>
     <button id="inst" ${dip&&!inApp()?'':'hidden'} onclick="A.install()">Pasang aplikasi</button>
-    <div id="stat" class="mut"></div><div class="mut" style="font-size:12px">uno v9</div></div>`;
+    <div id="stat" class="mut"></div><div class="mut" style="font-size:12px">uno v10</div></div>`;
     stat();return
   }
-  const bar=`<div class="bar"><span class="mut">Room <b>${room}</b></span><span class="row"><button onclick="A.snd()" aria-label="Suara">${mute?'🔇':'🔊'}</button><button onclick="A.leave()">${S.host===pid?'Tutup room':'Keluar'}</button></span></div>`;
+  const bar=`<div class="bar"><span class="row"><button class="ib" onclick="A.rchat()" aria-label="Chat room">💬<span class="dot rc" ${rcUnread?'':'hidden'}>${rcUnread>9?'9+':rcUnread}</span></button><span class="mut">Room <b>${room}</b></span></span><button onclick="A.leave()">${S.host===pid?'Tutup room':'Keluar'}</button></div>`;
   if(S.status==='lobby'){
     const host=S.host===pid;
     el.innerHTML=`${bar}${navHTML()}<div class="col"><div class="code">${room}</div>
@@ -662,7 +716,7 @@ async function connect(){
   if(!db){try{await loadSDK()}catch(e){authErr='sdk';sdkErr=e.message;stat();return}}
   sdkMsg='Menghubungkan ke server…';stat();
   ct=setTimeout(()=>{if(!pid&&!authErr){authErr='timeout';stat()}},10000);
-  signInAnonymously(auth).then(async u=>{pid=u.user.uid;authErr=null;try{await loadMe()}catch(e){toast(errMsg(e))}ready=true;stat();render();const r=st.get('room');if(ME)listenInbox();if(r&&ME)enter(r)}).catch(e=>{authErr=e.code||e.message;stat()})
+  signInAnonymously(auth).then(async u=>{pid=u.user.uid;authErr=null;try{await loadMe()}catch(e){toast(errMsg(e))}ready=true;stat();render();const r=st.get('room');if(ME)listenInbox();if(r&&ME)enter(r);const g=new URLSearchParams(location.search).get('go');if(g&&ME){history.replaceState(null,'',location.pathname);setTimeout(()=>goTo(g),600)}}).catch(e=>{authErr=e.code||e.message;stat()})
 }
 A.retry=connect;connect();
 </script>
