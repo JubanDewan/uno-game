@@ -28,7 +28,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--B);outline-offs
 .bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
 .code{font:800 40px/1 ui-monospace,Menlo,monospace;letter-spacing:6px}
 .list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:6px}
-.list li{background:var(--pn);border:1px solid var(--ln);border-radius:10px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center}
+.list li{background:var(--pn);border:1px solid var(--ln);border-radius:10px;padding:10px 14px;display:flex;justify-content:space-between}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
 .pc{background:var(--pn);border:2px solid var(--ln);border-radius:10px;padding:6px 10px;font-size:14px;display:flex;gap:8px;align-items:center}
 .pc.t{border-color:var(--fg)}
@@ -69,7 +69,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--B);outline-offs
 .gm .bar{margin:0}
 .seats{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 18px;padding:6px 0 10px}
 .seat{display:flex;flex-direction:column;align-items:center;gap:3px}
-.tag{display:flex;gap:6px;align-items:center;background:var(--pn);border:2px solid var(--ln);border-radius:8px;padding:1px 8px;font-size:12px;font-weight:700;max-width:175px;transition:box-shadow .15s,border-color .15s}
+.tag{display:flex;gap:6px;align-items:center;background:var(--pn);border:2px solid var(--ln);border-radius:8px;padding:1px 8px;font-size:12px;font-weight:700;max-width:150px}
 .tag span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tag b{background:var(--fg);color:var(--bg);border-radius:5px;padding:0 6px}
 .tag em{color:var(--R);font-style:normal;font-weight:800}
@@ -83,9 +83,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--B);outline-offs
 @keyframes spin{to{transform:rotate(360deg)}}
 .me{padding-bottom:max(4px,env(safe-area-inset-bottom))}
 .mehead{display:flex;justify-content:center;gap:8px;align-items:center}
-.mid{position:relative;z-index:2}
-.me{position:relative;z-index:1}
-.hand{flex-wrap:nowrap;gap:0;padding:24px 16px 10px;margin-top:-10px;pointer-events:none;overflow-x:auto;justify-content:safe center;scrollbar-width:none}
+.hand{flex-wrap:nowrap;gap:0;padding:38px 16px 10px;margin-top:-24px;pointer-events:none;overflow-x:auto;justify-content:safe center;scrollbar-width:none}
 .hand .c{pointer-events:auto}
 .hand .c:hover{z-index:2}
 .ov{z-index:40}
@@ -163,14 +161,6 @@ input,textarea{-webkit-user-select:text;user-select:text}
 .c.dr{cursor:pointer;transition:transform .16s cubic-bezier(.2,.9,.3,1.5)}
 .c.dr:hover{transform:translateY(-4px) scale(1.07)}
 .c.dr:active{transform:scale(.93);transition-duration:.06s}
-
-/* ===== Voice Chat UI ===== */
-.ib.mic-on{background:var(--G);color:#fff;border-color:var(--G);box-shadow:0 0 0 3px color-mix(in srgb,var(--G) 28%,transparent)}
-.ib.mic-off{opacity:.85}
-.mic-ind{font-style:normal;font-size:11px;line-height:1;opacity:.45;transition:opacity .15s,transform .15s}
-.mic-ind.on{opacity:1}
-.talking .tag,.list li.talking{border-color:var(--G)!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--G) 35%,transparent)}
-.talking .mic-ind{transform:scale(1.25)}
 </style>
 </head>
 <body>
@@ -178,16 +168,16 @@ input,textarea{-webkit-user-select:text;user-select:text}
 <div id="toast"></div>
 <div id="ntf" role="alert"></div>
 <div id="pnl"></div>
-<div id="vaudio" hidden></div>
 <script>
 (function(){var show=function(m){var a=document.getElementById('app');if(a&&!window.__ok)a.innerHTML='<p style="padding:20px;color:#c0392b;font:15px system-ui">'+m+'</p>'};
 addEventListener('error',function(e){show('Game gagal dimuat: '+(e.message||'skrip tidak bisa diunduh (Firebase SDK terblokir atau tidak ada internet).'))},true);
-setTimeout(function(){show('Game belum termuat (uno v12). Cek internet, buka file lewat hosting atau server (bukan pratinjau chat), lalu muat ulang tanpa cache (Ctrl+Shift+R).')},22000)})();
+setTimeout(function(){show('Game belum termuat. Cek internet, buka file lewat hosting atau server (bukan pratinjau chat), lalu muat ulang tanpa cache (Ctrl+Shift+R).')},22000)})();
 </script>
 <script type="module">
 const CFG={apiKey:"AIzaSyDF5n9QLR136niB935lG8ThtkI0lgfzaVY",authDomain:"game-5d4ed.firebaseapp.com",projectId:"game-5d4ed",storageBucket:"game-5d4ed.firebasestorage.app",messagingSenderId:"817751327735",appId:"1:817751327735:web:fa1a24d4f232e62f7ae4f2",measurementId:"G-CD48QGV9TZ"};
-let initializeApp,getFirestore,doc,setDoc,onSnapshot,runTransaction,deleteDoc,getDoc,getDocs,collection,query,orderBy,limit,increment,addDoc,where,getAuth,signInAnonymously,db,auth;
+let initializeApp,getFirestore,doc,setDoc,onSnapshot,runTransaction,deleteDoc,getDoc,getDocs,collection,query,orderBy,limit,increment,addDoc,getAuth,signInAnonymously,db,auth;
 
+const APP_VER='12'; // naikkan setiap rilis; dipakai untuk mendeteksi versi baru
 const $=s=>document.querySelector(s);
 const st={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch{}}};
 let pid=null,authErr=null,ct,sdkMsg='Memuat Firebase…',sdkErr=''; // pid = uid Firebase Auth (anonim), diisi setelah login berhasil
@@ -236,7 +226,7 @@ function play(s,i,col){
   if(!p.hand.length){ // pemain ini habis kartu: dapat peringkat, permainan lanjut sampai tersisa 1 pemain
     p.rank=nextRank(s);s.log+=' dan selesai di peringkat '+p.rank+'!';
     const rest=s.players.filter(q=>q.hand.length);
-    if(rest.length<=1){if(rest[0]){rest[0].rank=nextRank(s);rest[0].l=1}s.status='finished';s.winner=p.name;return} // l=1: pemain terakhir yang kalah
+    if(rest.length<=1){if(rest[0]){rest[0].rank=nextRank(s);rest[0].l=1}s.status='finished';s.winner=p.name;return} // l=1: pemain terakhir yang kalah // winner = pemain yang mengakhiri permainan (tetap sesuai rules); juara = rank 1
   }
   eff(s,c)
 }
@@ -261,364 +251,6 @@ function drawCard(s){
   if(p.hand.length>n&&ok(s,p.hand[n]))s.drew=true;else adv(s)
 }
 
-/* ===== Voice Chat (WebRTC Mesh + Firestore Signaling) ===== */
-const ICE={iceServers:[
-  {urls:'stun:stun.l.google.com:19302'},
-  {urls:'stun:stun1.l.google.com:19302'},
-  {urls:'stun:stun2.l.google.com:19302'}
-]};
-let micStream=null,micOn=false,micBusy=false,rtcUn=null,rtcPeers={},rtcIceQ={},rtcCandUnsubs={},rtcLastOffer={},rtcLastAnswer={},rtcSid='',vadTimer=null,vadCtx=null,vadAnalysers={},speakingSet=new Set(),audioUnlocked=false;
-
-function unlockRemoteAudio(){
-  audioUnlocked=true;
-  if(vadCtx&&vadCtx.state==='suspended')vadCtx.resume().catch(()=>{});
-  document.querySelectorAll('#vaudio audio').forEach(a=>{
-    a.muted=false;
-    if(a.paused)a.play().catch(()=>{});
-  });
-}
-addEventListener('pointerdown',unlockRemoteAudio,{passive:true});
-addEventListener('keydown',unlockRemoteAudio,{passive:true});
-
-function updateMicUI(){
-  const btn=$('#micbtn');
-  if(btn){
-    btn.classList.toggle('mic-on',micOn);
-    btn.classList.toggle('mic-off',!micOn);
-    btn.textContent=micOn?'🎙️':'🔇';
-    btn.title=micOn?'Mikrofon aktif (ketuk untuk mute)':'Mikrofon mati (ketuk untuk berbicara)';
-  }
-  const myInd=document.querySelector(`.mic-ind[data-uid="${pid}"]`);
-  if(myInd){myInd.textContent=micOn?'🎙️':'🔇';myInd.classList.toggle('on',micOn)}
-  document.querySelectorAll('[data-vuid]').forEach(el=>{
-    el.classList.toggle('talking',speakingSet.has(el.dataset.vuid));
-  });
-}
-
-function attachVad(uid,stream){
-  try{
-    vadCtx=vadCtx||new(window.AudioContext||window.webkitAudioContext)();
-    if(vadCtx.state==='suspended')vadCtx.resume().catch(()=>{});
-    if(vadAnalysers[uid]){try{vadAnalysers[uid].src.disconnect()}catch{}}
-    const src=vadCtx.createMediaStreamSource(stream);
-    const analyser=vadCtx.createAnalyser();
-    analyser.fftSize=256;
-    src.connect(analyser);
-    vadAnalysers[uid]={src,analyser,data:new Uint8Array(analyser.frequencyBinCount)};
-    if(!vadTimer){
-      vadTimer=setInterval(()=>{
-        let changed=false;
-        for(const id in vadAnalysers){
-          if(id===pid&&!micOn){
-            if(speakingSet.delete(id))changed=true;
-            continue;
-          }
-          const {analyser,data}=vadAnalysers[id];
-          analyser.getByteFrequencyData(data);
-          let sum=0;for(let i=0;i<data.length;i++)sum+=data[i];
-          const avg=sum/data.length;
-          const active=avg>14;
-          if(active&&!speakingSet.has(id)){speakingSet.add(id);changed=true}
-          else if(!active&&speakingSet.has(id)){speakingSet.delete(id);changed=true}
-        }
-        if(changed){
-          document.querySelectorAll('[data-vuid]').forEach(el=>{
-            el.classList.toggle('talking',speakingSet.has(el.dataset.vuid));
-          });
-        }
-      },140);
-    }
-  }catch{}
-}
-
-function detachVad(uid){
-  if(vadAnalysers[uid]){try{vadAnalysers[uid].src.disconnect()}catch{}delete vadAnalysers[uid]}
-  speakingSet.delete(uid);
-  if(!Object.keys(vadAnalysers).length&&vadTimer){clearInterval(vadTimer);vadTimer=null}
-}
-
-async function bindTrackToPeers(stream){
-  const track=stream.getAudioTracks()[0];
-  if(!track)return;
-  for(const peerUid in rtcPeers){
-    const pc=rtcPeers[peerUid];
-    const audioTransceiver=pc.getTransceivers().find(t=>
-      (t.sender&&t.sender.track&&t.sender.track.kind==='audio')||
-      (t.receiver&&t.receiver.track&&t.receiver.track.kind==='audio')
-    );
-    if(audioTransceiver&&audioTransceiver.sender){
-      await audioTransceiver.sender.replaceTrack(track).catch(()=>{});
-      if(audioTransceiver.direction==='recvonly')audioTransceiver.direction='sendrecv';
-    }else if(!pc.getSenders().some(s=>s.track&&s.track.kind==='audio')){
-      pc.addTrack(track,stream);
-    }
-  }
-}
-
-async function ensureMic(){
-  if(micStream&&micStream.getAudioTracks().some(t=>t.readyState==='live')){
-    await bindTrackToPeers(micStream);
-    return micStream;
-  }
-  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw'Browser tidak mendukung akses mikrofon (pastikan memakai HTTPS)';
-  micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});
-  micStream.getAudioTracks().forEach(t=>t.enabled=micOn);
-  attachVad(pid,micStream);
-  await bindTrackToPeers(micStream);
-  return micStream;
-}
-
-function closePeer(peerUid){
-  if(rtcCandUnsubs[peerUid]){rtcCandUnsubs[peerUid]();delete rtcCandUnsubs[peerUid]}
-  if(rtcPeers[peerUid]){try{rtcPeers[peerUid].close()}catch{}delete rtcPeers[peerUid]}
-  delete rtcIceQ[peerUid];
-  delete rtcLastOffer[peerUid];
-  delete rtcLastAnswer[peerUid];
-  detachVad(peerUid);
-  const el=document.getElementById('va_'+peerUid);
-  if(el)el.remove();
-}
-
-function stopVoice(){
-  rtcUn&&rtcUn();rtcUn=null;
-  Object.keys(rtcPeers).forEach(closePeer);
-  rtcPeers={};rtcIceQ={};rtcCandUnsubs={};rtcLastOffer={};rtcLastAnswer={};
-  if(micStream){micStream.getTracks().forEach(t=>t.stop());micStream=null}
-  detachVad(pid);
-  micOn=false;micBusy=false;speakingSet.clear();
-  const box=$('#vaudio');if(box)box.innerHTML='';
-  if(room&&pid){
-    deleteDoc(doc(db,'rooms',room,'voice',pid)).catch(()=>{});
-  }
-}
-
-async function syncMicState(code=room){
-  if(!code||!pid)return;
-  try{
-    await setDoc(doc(db,'rooms',code,'voice',pid),{uid:pid,mic:micOn,sid:rtcSid,ts:Date.now()},{merge:true});
-  }catch{}
-}
-
-function playRemoteStream(peerUid,stream){
-  let audio=document.getElementById('va_'+peerUid);
-  if(!audio){
-    audio=document.createElement('audio');
-    audio.id='va_'+peerUid;
-    audio.autoplay=true;
-    audio.playsInline=true;
-    audio.setAttribute('playsinline','');
-    $('#vaudio').appendChild(audio);
-  }
-  audio.muted=false;
-  audio.volume=1;
-  if(audio.srcObject!==stream)audio.srcObject=stream;
-  const tryPlay=(attempt=0)=>{
-    audio.play().catch(()=>{
-      if(attempt<4)setTimeout(()=>tryPlay(attempt+1),500*(attempt+1));
-      else if(!audioUnlocked)toast('Ketuk layar sekali untuk mengaktifkan suara pemain lain');
-    });
-  };
-  tryPlay(0);
-  attachVad(peerUid,stream);
-}
-
-async function sendOfferToPeer(code,peerUid,pc,restartIce=false){
-  if(!code||room!==code||pc.signalingState!=='stable')return;
-  const sigId=[pid,peerUid].sort().join('_');
-  const sigRef=doc(db,'rooms',code,'rtc',sigId);
-  const hasAudioTx=pc.getTransceivers().some(t=>
-    (t.sender&&t.sender.track&&t.sender.track.kind==='audio')||
-    (t.receiver&&t.receiver.track&&t.receiver.track.kind==='audio')
-  );
-  if(!hasAudioTx){
-    pc.addTransceiver('audio',{direction:'sendrecv'});
-  }
-  if(micStream&&micStream.getAudioTracks().some(t=>t.readyState==='live')){
-    await bindTrackToPeers(micStream);
-  }
-  const offer=await pc.createOffer(restartIce?{iceRestart:true}:undefined);
-  await pc.setLocalDescription(offer);
-  rtcLastAnswer[peerUid]='';
-  await setDoc(sigRef,{
-    offer:{type:offer.type,sdp:offer.sdp},
-    answer:null,
-    from:pid,
-    ts:Date.now()
-  });
-}
-
-function getOrCreatePC(code,peerUid){
-  if(rtcPeers[peerUid])return rtcPeers[peerUid];
-  const pc=new RTCPeerConnection(ICE);
-  rtcPeers[peerUid]=pc;
-  rtcIceQ[peerUid]=[];
-  rtcLastOffer[peerUid]='';
-  rtcLastAnswer[peerUid]='';
-  const sigId=[pid,peerUid].sort().join('_');
-
-  if(micStream&&micStream.getAudioTracks().some(t=>t.readyState==='live')){
-    micStream.getTracks().forEach(t=>pc.addTrack(t,micStream));
-  }else{
-    pc.addTransceiver('audio',{direction:'sendrecv'});
-  }
-
-  pc.ontrack=ev=>{
-    const stream=ev.streams[0]||new MediaStream([ev.track]);
-    ev.track.onunmute=()=>playRemoteStream(peerUid,stream);
-    playRemoteStream(peerUid,stream);
-  };
-
-  pc.onicecandidate=ev=>{
-    if(ev.candidate&&room===code){
-      addDoc(collection(db,'rooms',code,'rtc',sigId,'cands'),{
-        from:pid,
-        cand:ev.candidate.toJSON(),
-        ts:Date.now()
-      }).catch(()=>{});
-    }
-  };
-
-  pc.oniceconnectionstatechange=()=>{
-    if(pc.iceConnectionState==='failed'&&pid<peerUid&&room===code){
-      sendOfferToPeer(code,peerUid,pc,true).catch(()=>{});
-    }
-  };
-
-  pc.onconnectionstatechange=()=>{
-    if(pc.connectionState==='failed'){
-      if(pid<peerUid&&room===code)sendOfferToPeer(code,peerUid,pc,true).catch(()=>{});
-      else closePeer(peerUid);
-    }else if(pc.connectionState==='closed'){
-      closePeer(peerUid);
-    }
-  };
-
-  rtcCandUnsubs[peerUid]=onSnapshot(
-    query(collection(db,'rooms',code,'rtc',sigId,'cands'),where('from','==',peerUid)),
-    sn=>{
-      sn.docChanges().forEach(async ch=>{
-        if(ch.type!=='added')return;
-        const c=ch.doc.data().cand;
-        if(!c)return;
-        if(pc.remoteDescription&&pc.remoteDescription.type){
-          await pc.addIceCandidate(new RTCIceCandidate(c)).catch(()=>{});
-        }else{
-          rtcIceQ[peerUid].push(c);
-        }
-      });
-    },()=>{}
-  );
-
-  return pc;
-}
-
-async function flushIce(peerUid,pc){
-  const q=rtcIceQ[peerUid]||[];
-  rtcIceQ[peerUid]=[];
-  for(const c of q){
-    await pc.addIceCandidate(new RTCIceCandidate(c)).catch(()=>{});
-  }
-}
-
-async function connectToPeer(code,peerUid){
-  if(!peerUid||peerUid===pid)return;
-  const sigId=[pid,peerUid].sort().join('_');
-  const sigRef=doc(db,'rooms',code,'rtc',sigId);
-  const amInitiator=pid<peerUid;
-  const pc=getOrCreatePC(code,peerUid);
-
-  if(amInitiator&&!pc.localDescription&&pc.signalingState==='stable'){
-    try{await sendOfferToPeer(code,peerUid,pc,false)}catch{}
-  }
-
-  if(!pc._sigUnsub){
-    pc._sigUnsub=onSnapshot(sigRef,async sn=>{
-      if(!sn.exists()||room!==code)return;
-      const d=sn.data();
-      try{
-        // Terima offer baru (termasuk renegotiation saat lawan menyalakan mic)
-        if(d.offer&&d.from&&d.from!==pid&&d.offer.sdp!==rtcLastOffer[peerUid]){
-          rtcLastOffer[peerUid]=d.offer.sdp;
-          if(pc.signalingState==='have-local-offer'){
-            await pc.setLocalDescription({type:'rollback'}).catch(()=>{});
-          }
-          await pc.setRemoteDescription(new RTCSessionDescription(d.offer));
-          await flushIce(peerUid,pc);
-          if(micStream&&micStream.getAudioTracks().some(t=>t.readyState==='live')){
-            await bindTrackToPeers(micStream);
-          }
-          const answer=await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          await setDoc(sigRef,{answer:{type:answer.type,sdp:answer.sdp}},{merge:true});
-        }
-        // Terima answer baru untuk offer yang kita kirim
-        if(d.answer&&d.from===pid&&pc.signalingState==='have-local-offer'&&d.answer.sdp!==rtcLastAnswer[peerUid]){
-          rtcLastAnswer[peerUid]=d.answer.sdp;
-          await pc.setRemoteDescription(new RTCSessionDescription(d.answer));
-          await flushIce(peerUid,pc);
-        }
-      }catch{}
-    },()=>{});
-    const origClose=pc.close.bind(pc);
-    pc.close=()=>{pc._sigUnsub&&pc._sigUnsub();origClose()};
-  }
-}
-
-function startVoice(code){
-  stopVoice();
-  rtcSid=Math.random().toString(36).slice(2,8);
-  syncMicState(code);
-  rtcUn=onSnapshot(collection(db,'rooms',code,'voice'),sn=>{
-    if(room!==code)return;
-    const activeIds=new Set();
-    sn.docs.forEach(d=>{
-      const v=d.data();
-      if(!v||!v.uid)return;
-      activeIds.add(v.uid);
-      if(v.uid!==pid)connectToPeer(code,v.uid);
-    });
-    Object.keys(rtcPeers).forEach(uid=>{
-      if(!activeIds.has(uid))closePeer(uid);
-    });
-    if(S)render();
-  },()=>{});
-}
-
-async function toggleMic(){
-  if(!room||micBusy)return;
-  unlockRemoteAudio();
-  if(micOn){
-    micOn=false;
-    if(micStream)micStream.getAudioTracks().forEach(t=>t.enabled=false);
-    speakingSet.delete(pid);
-    updateMicUI();
-    await syncMicState();
-    toast('Mikrofon dimatikan');
-    return;
-  }
-  micBusy=true;
-  try{
-    micOn=true;
-    await ensureMic();
-    micStream.getAudioTracks().forEach(t=>t.enabled=true);
-    updateMicUI();
-    await syncMicState();
-    // Renegosiasi ke semua peer aktif tanpa terhambat arah initiator (pid < peerUid)
-    for(const peerUid in rtcPeers){
-      const pc=rtcPeers[peerUid];
-      await sendOfferToPeer(room,peerUid,pc,false).catch(()=>{});
-    }
-    toast('Mikrofon aktif — pemain lain bisa mendengarmu');
-  }catch(e){
-    micOn=false;
-    updateMicUI();
-    const msg=e&&e.name==='NotAllowedError'?'Izin mikrofon ditolak oleh browser':typeof e==='string'?e:'Gagal menyalakan mikrofon';
-    toast(msg);
-  }finally{
-    micBusy=false;
-  }
-}
-
 /* ===== Firebase ===== */
 async function act(fn,code=room){
   try{
@@ -629,18 +261,12 @@ async function act(fn,code=room){
     });return true
   }catch(e){toast(typeof e==='string'?e:'Gagal: '+(e.code||e.message));sfx('err');return false}
 }
-const delRoom=async c=>{ // tutup room: riwayat chat & signaling voice ikut dihapus
-  try{const q=await getDocs(collection(db,'rooms',c,'chat'));await Promise.all(q.docs.map(d=>deleteDoc(doc(db,'rooms',c,'chat',d.id))))}catch(e){}
-  try{const v=await getDocs(collection(db,'rooms',c,'voice'));await Promise.all(v.docs.map(d=>deleteDoc(doc(db,'rooms',c,'voice',d.id))))}catch(e){}
-  try{const r=await getDocs(collection(db,'rooms',c,'rtc'));await Promise.all(r.docs.map(async d=>{
-    try{const cs=await getDocs(collection(db,'rooms',c,'rtc',d.id,'cands'));await Promise.all(cs.docs.map(x=>deleteDoc(doc(db,'rooms',c,'rtc',d.id,'cands',x.id))))}catch{}
-    await deleteDoc(doc(db,'rooms',c,'rtc',d.id))
-  }))}catch(e){}
+const delRoom=async c=>{ // tutup room: riwayat chat ikut dihapus
+  try{const q=await getDocs(collection(db,'rooms',c,'chat'));await Promise.all(q.docs.map(d=>deleteDoc(doc(db,'rooms',c,'chat',d.id))))}catch(e){/* hapus semampunya */}
   try{await deleteDoc(doc(db,'rooms',c));return true}catch(e){return false}
 };
 function enter(code){
   room=code;st.set('room',code);unsub&&unsub();
-  startVoice(code);
   unsub=onSnapshot(doc(db,'rooms',code),sn=>{
     const prev=S;
     if(!sn.exists()){const l=leaving;detach();if(!l)toast('Room ditutup oleh host');return} // host menutup room: semua anggota otomatis keluar
@@ -651,16 +277,10 @@ function enter(code){
     if(S.status==='finished'&&(!prev||prev.status!=='finished'))recordGame(S)
   },e=>{detach();toast('Firestore error: '+e.code)})
 }
-function detach(){
-  stopVoice();
-  unsub&&unsub();unsub=null;rcUn&&rcUn();rcUn=null;rcMsgs=[];rcUnread=0;
-  if(rcOpen){PN().innerHTML='';rcOpen=false}
-  leaving=false;room=null;S=null;pick=null;st.set('room',null);render()
-}
+function detach(){unsub&&unsub();unsub=null;rcUn&&rcUn();rcUn=null;rcMsgs=[];rcUnread=0;if(rcOpen){PN().innerHTML='';rcOpen=false}leaving=false;room=null;S=null;pick=null;st.set('room',null);render()}
 const myName=()=>{if(!pid){toast('Menghubungkan ke server…');return null}if(!ME){toast('Masuk dengan username dulu');return null}return ME.name};
 
 const A=window.A={
-  mic:toggleMic,
   async create(){
     const name=myName();if(!name)return;
     const code=Array.from({length:4},()=>'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.random()*24|0]).join('');
@@ -682,14 +302,14 @@ const A=window.A={
     const code=room;
     if(S&&S.host===pid){ // host keluar = menutup room
       if(!confirm('Tutup room? Semua pemain akan otomatis keluar.'))return;
-      leaving=true;stopVoice();if(!(await delRoom(code))){leaving=false;return toast('Gagal menutup room — periksa rules Firestore')}
-    }else if(S){leaving=true;stopVoice();await act(s=>removeP(s,pid))}
+      leaving=true;if(!(await delRoom(code))){leaving=false;return toast('Gagal menutup room — periksa rules Firestore')}
+    }else if(S){leaving=true;await act(s=>removeP(s,pid))}
     detach()
   },
   tap(i,ev){lastRect=ev&&ev.currentTarget.getBoundingClientRect();const c=S.players[S.turn].hand[i];if(c[0]==='W'){if(!ok(S,c))return;pick=i;render()}else act(s=>play(s,i))},
   col(c){const i=pick;pick=null;render();act(s=>play(s,i,c))},
   cancel(){pick=null;render()},
-  draw:()=>{if(A._dr)return;A._dr=1;act(drawCard).finally(()=>{A._dr=0})},
+  draw:()=>act(drawCard),
   snd(){mute=!mute;st.set('mute',mute?'1':'0');render();sfx('turn')},
   pass:()=>act(s=>{if(!s.drew||s.players[s.turn].id!==pid)throw'Tidak bisa melewati';adv(s)}),
   again:()=>act(s=>{if(s.host!==pid)throw'Hanya host';s.status='lobby';s.players.forEach(p=>{p.hand=[];p.rank=0;p.w=0;p.l=0})})
@@ -767,10 +387,11 @@ let ME=null,ready=false,pcol=null;
 const C={get:k=>{try{return JSON.parse(localStorage.getItem('uno_'+k))}catch{return null}},set:(k,v)=>{try{v==null?localStorage.removeItem('uno_'+k):localStorage.setItem('uno_'+k,JSON.stringify(v))}catch{}}};
 const errMsg=e=>typeof e==='string'?e:e&&e.code==='permission-denied'?'Ditolak Firestore rules — pastikan rules terbaru sudah dipublish':'Gagal: '+((e&&(e.code||e.message))||e);
 const avatar=(p,z=30)=>`<i class="av" style="background:${p.color};width:${z}px;height:${z}px;font-size:${z*.45}px">${esc((p.name||'?')[0].toUpperCase())}</i>`;
+// Versi data publik: meta/app.v naik setiap ada perubahan profil/skor. Cache dipakai selama versinya sama.
 const ver=async()=>{const d=await getDoc(doc(db,'meta','app'));return d.exists()?d.data().v:0};
 const bump=()=>setDoc(doc(db,'meta','app'),{v:increment(1)},{merge:true}).catch(()=>{});
 async function loadMe(){
-  const c=C.get('me');if(c&&c.uid===pid){ME=c;return}
+  const c=C.get('me');if(c&&c.uid===pid){ME=c;return} // profil sendiri hanya berubah lewat perangkat ini, jadi cache dipercaya
   const d=await getDoc(doc(db,'players',pid));ME=d.exists()?{uid:pid,...d.data()}:null;C.set('me',ME)
 }
 async function login(){
@@ -784,7 +405,7 @@ async function login(){
       if(u.exists()){
         if(u.data().uid!==pid)throw'Username sudah dimiliki pemain lain';
         const d=await t.get(doc(db,'players',pid));if(!d.exists())throw'Username sudah dimiliki pemain lain';
-        return{uid:pid,...d.data()}
+        return{uid:pid,...d.data()} // masuk kembali di perangkat yang sama
       }
       const pr={username:un,name:nm,color:COLORS[Math.random()*COLORS.length|0],games:0,wins:0,points:0};
       t.set(doc(db,'players',pid),pr);t.set(ur,{uid:pid});return{uid:pid,...pr}
@@ -873,7 +494,7 @@ Object.assign(A,{
   async befriend(uid){
     const x=PN().__f;
     try{await setDoc(doc(db,'players',pid,'friends',uid),{uid});
-      const c=C.get('fr');if(c&&!c.rows.some(r=>r.uid===uid)){c.rows.push(x);C.set('fr',c)}
+      const c=C.get('fr');if(c&&!c.rows.some(r=>r.uid===uid)){c.rows.push(x);C.set('fr',c)} // perbarui cache lokal, tanpa baca ulang
       $('#fres').textContent='Ditambahkan ke daftar teman';listFriends()}
     catch(e){$('#fres').textContent=errMsg(e)}
   },
@@ -912,23 +533,24 @@ const updBadge=()=>document.querySelectorAll('.nb').forEach(e=>{e.textContent=NB
 const hero=()=>`<div class="hero">${[['WW',-22,16],['GS',-13,6],['RS',-5,0],['R3',4,0],['B2',12,6],['Y3',21,16]].map(([c,r,y])=>card(c,'','',`style="--r:${r}deg;--y:${y}px"`)).join('')}</div>`;
 const delInbox=k=>deleteDoc(doc(db,'players',pid,'inbox',k)).catch(()=>{});
 const osOn=()=>C.get('os')===1&&'Notification' in window&&Notification.permission==='granted';
-async function osNotify(t,b,act){
+async function osNotify(t,b,act){ // notifikasi sistem hanya saat aplikasi terbuka di latar belakang; klik -> buka sumbernya
   if(!document.hidden||!osOn())return;
   try{
     const o={body:b,icon:'icon-192.png',data:{act:act||''}};
     const reg=navigator.serviceWorker?await navigator.serviceWorker.getRegistration().catch(()=>null):null;
-    if(reg)await reg.showNotification(t,o);
+    if(reg)await reg.showNotification(t,o); // klik ditangani sw.js
     else{const x=new Notification(t,o);x.onclick=()=>{window.focus();goTo(act)}}
   }catch{}
 }
 let rcUn=null,rcMsgs=[],rcUnread=0,rcOpen=false,rcFirst=true,ntT;
-const goTo=a=>{
+const goTo=a=>{ // tujuan notifikasi: 'friends' | 'chat:UID' | 'rchat'
   if(!a)return;
   if(a==='friends')openFriends();
   else if(a.startsWith('chat:'))openChat(a.slice(5));
-  else if(a==='rchat'&&room)openRoomChat()
+  else if(a==='rchat'&&room)openRoomChat();
+  else if(a==='reload')location.reload()
 };
-function notify(msg,act,title){
+function notify(msg,act,title){ // banner yang bisa diklik
   const n=$('#ntf');n.textContent=msg;n.onclick=()=>{n.className='';goTo(act)};n.className='s';
   clearTimeout(ntT);ntT=setTimeout(()=>n.className='',6000);sfx('turn');osNotify(title||'UNO',msg,act)
 }
@@ -986,7 +608,7 @@ async function openChat(uid){
 }
 Object.assign(A,{
   nav(){navOpen=!navOpen;document.querySelectorAll('.navl').forEach(e=>e.classList.toggle('open',navOpen));document.querySelectorAll('.burger').forEach(b=>b.textContent=navOpen?'✕':'☰')},
-  panel(n){if(n==='st'&&room)return;
+  panel(n){if(n==='st'&&room)return; // pengaturan & suara hanya di tampilan awal
     n==='lb'?openLB('all'):n==='fr'?openFriends():n==='st'?openSettings():openProfile()},
   rchat:openRoomChat,
   async rsend(){const el=$('#rci'),t=el.value.trim();if(!t||!room)return;el.value='';
@@ -1020,15 +642,28 @@ Object.assign(A,{
   },
   async install(){if(!dip)return;dip.prompt();await dip.userChoice.catch(()=>{});dip=null;const b=$('#inst');if(b)b.hidden=true}
 });
-addEventListener('beforeinstallprompt',e=>{e.preventDefault();dip=e;const b=$('#inst');if(b&&!inApp())b.hidden=false});
-if('serviceWorker' in navigator)navigator.serviceWorker.addEventListener('message',e=>{if(e.data&&e.data.type==='go')goTo(e.data.act)});
+addEventListener('beforeinstallprompt',e=>{e.preventDefault();dip=e;const b=$('#inst');if(b&&!inApp())b.hidden=false}); // tombol hanya ada di layar awal
+if('serviceWorker' in navigator)navigator.serviceWorker.addEventListener('message',e=>{if(e.data&&e.data.type==='go')goTo(e.data.act)}); // klik notifikasi sistem
 const inField=t=>{const e=t&&t.nodeType===3?t.parentElement:t;return !!(e&&e.closest&&e.closest('input,textarea'))};
-['selectstart','contextmenu','copy','dragstart'].forEach(ev=>addEventListener(ev,e=>{if(!inField(e.target))e.preventDefault()}));
+['selectstart','contextmenu','copy','dragstart'].forEach(ev=>addEventListener(ev,e=>{if(!inField(e.target))e.preventDefault()})); // cegah seleksi/salin teks (kecuali kolom input)
+let updShown=false;
+async function checkUpdate(){ // bandingkan dengan versi terbaru di server; di beranda langsung dimuat ulang, di room tampilkan banner
+  try{
+    const t=await (await fetch(location.pathname,{cache:'no-store'})).text();
+    const m=t.match(/const APP_VER='([^']+)'/);
+    if(!m||m[1]===APP_VER)return;
+    if(!room){location.reload();return}
+    if(!updShown){updShown=true;notify('Versi baru tersedia — ketuk untuk memperbarui (kamu tetap masuk ke room ini)','reload','UNO')}
+  }catch{}
+}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkUpdate()});
+setInterval(checkUpdate,3*60*1000);setTimeout(checkUpdate,4000);
+if('serviceWorker' in navigator){const had=!!navigator.serviceWorker.controller;navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had&&!room)location.reload()})}
 addEventListener('appinstalled',()=>{dip=null;const b=$('#inst');if(b)b.hidden=true});
 if('serviceWorker' in navigator&&location.protocol.startsWith('http'))addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 
 /* ===== Tampilan ===== */
-const card=(c,col,cls='',at='')=>{
+const card=(c,col,cls='',at='')=>{ // kartu ala UNO asli: sisi berwarna, oval putih, angka besar, angka kecil di sudut
   const w=c[0]==='W',cc=w&&!col?'W':col||c[0],l=lab(c),big=w&&!col?(c==='WF'?'+4':''):l,cor=w&&!col&&c!=='WF'?'':l;
   return `<div class="c ${cc} ${cls}" ${at}><s></s><i>${big}</i>${cor?`<u>${cor}</u><u class="b">${cor}</u>`:''}</div>`};
 function render(){
@@ -1043,34 +678,34 @@ function render(){
     <div class="col"><button class="p need" onclick="A.create()">Buat room baru</button>
     <div class="row"><input id="code" placeholder="Kode room" maxlength="4" autocapitalize="characters" autocomplete="off"><button class="need" onclick="A.join()">Gabung</button></div>
     <button id="inst" ${dip&&!inApp()?'':'hidden'} onclick="A.install()">Pasang aplikasi</button>
-    <div id="stat" class="mut"></div><div class="mut" style="font-size:12px">uno v12</div></div>`;
+    <div id="stat" class="mut"></div><div class="mut" style="font-size:12px">uno v${APP_VER}</div></div>`;
     stat();return
   }
-  const bar=`<div class="bar"><span class="row"><button class="ib" onclick="A.rchat()" aria-label="Chat room">💬<span class="dot rc" ${rcUnread?'':'hidden'}>${rcUnread>9?'9+':rcUnread}</span></button><button id="micbtn" class="ib ${micOn?'mic-on':'mic-off'}" onclick="A.mic()" aria-label="Mikrofon" title="${micOn?'Mikrofon aktif (ketuk untuk mute)':'Mikrofon mati (ketuk untuk berbicara)'}">${micOn?'🎙️':'🔇'}</button><span class="mut">Room <b>${room}</b></span></span><button onclick="A.leave()">${S.host===pid?'Tutup room':'Keluar'}</button></div>`;
+  const bar=`<div class="bar"><span class="row"><button class="ib" onclick="A.rchat()" aria-label="Chat room">💬<span class="dot rc" ${rcUnread?'':'hidden'}>${rcUnread>9?'9+':rcUnread}</span></button><span class="mut">Room <b>${room}</b></span></span><button onclick="A.leave()">${S.host===pid?'Tutup room':'Keluar'}</button></div>`;
   if(S.status==='lobby'){
     const host=S.host===pid;
     el.innerHTML=`${bar}${navHTML()}<div class="col"><div class="code">${room}</div>
-    <p class="mut">Bagikan kode ini ke teman-temanmu. Pemain: ${S.players.length}/10 · Ketuk <b>🎙️</b> untuk ngobrol suara.</p>
-    <ul class="list">${S.players.map(p=>`<li data-vuid="${p.id}" class="${speakingSet.has(p.id)?'talking':''}"><span>${esc(p.name)}${p.id===pid?' (kamu)':''}</span><span class="row">${p.id===S.host?'<span class="mut">host</span>':''}${p.id===pid?`<i class="mic-ind ${micOn?'on':''}" data-uid="${pid}">${micOn?'🎙️':'🔇'}</i>`:''}</span></li>`).join('')}</ul>
+    <p class="mut">Bagikan kode ini ke teman-temanmu. Pemain: ${S.players.length}/10</p>
+    <ul class="list">${S.players.map(p=>`<li><span>${esc(p.name)}${p.id===pid?' (kamu)':''}</span>${p.id===S.host?'<span class="mut">host</span>':''}</li>`).join('')}</ul>
     ${host?`<button class="p" onclick="A.start()" ${S.players.length<2?'disabled':''}>${S.players.length<2?'Tunggu minimal 2 pemain':'Mulai permainan'}</button>`:'<p class="mut">Menunggu host memulai…</p>'}</div>`;
     return
   }
   const meI=S.players.findIndex(p=>p.id===pid),me=S.players[meI],cur=S.players[S.turn],play=S.status==='playing',mine=play&&cur.id===pid,n=me.hand.length;
-  const last=n-1,can=i=>mine&&ok(S,me.hand[i])&&(!S.drew||i===last),any=me.hand.some((_,i)=>can(i)),canDraw=mine&&!S.drew;
+  const last=n-1,can=i=>mine&&ok(S,me.hand[i])&&(!S.drew||i===last),any=me.hand.some((_,i)=>can(i)),canDraw=mine&&!S.drew; // boleh mengambil kartu walau ada yang cocok (bisa mengecoh lawan)
   const msg=!play?'':mine?(S.drew?'Mainkan kartu yang baru diambil, atau lewati':any?'Giliranmu — mainkan kartu, atau ketuk tumpukan untuk mengambil':'Tidak ada kartu cocok — ketuk tumpukan untuk mengambil'):'Giliran '+esc(cur.name);
   const cw=cwv(),gap=6,mg=n>1?Math.max(gap-Math.max(0,(n*cw+(n-1)*gap-(innerWidth-52))/(n-1)),-cw*.6):0;
   const order=me.hand.map((c,i)=>[c,i]).sort((a,b)=>a[0]<b[0]?-1:1);
   const tot=S.players.length,tp=S.players.filter(x=>!x.w).length,m=tot-1,opp=Array.from({length:m},(_,k)=>(meI+1+k)%tot);
   const seat=(i,k)=>{const p=S.players[i],t=m>1?k/(m-1)*2-1:0,c=p.hand.length,f=Math.min(c,7);
-    return `<div class="seat ${play&&i===S.turn?'t':''} ${play&&!c?'done':''} ${speakingSet.has(p.id)?'talking':''}" data-p="${i}" data-vuid="${p.id}" style="transform:rotate(${(t*9).toFixed(1)}deg) translateY(${(t*t*14).toFixed(0)}px)"><div class="tag"><span>${esc(p.name)}</span><b>${p.w?'tonton':play&&!c?'#'+p.rank:c}</b>${c===1?'<em>UNO!</em>':''}</div><div class="fan">${Array.from({length:f},(_,j)=>`<div class="c back mini" style="margin-left:${j?'calc(var(--cw)*-.36)':0};transform:rotate(${((j-(f-1)/2)*7).toFixed(1)}deg)"></div>`).join('')}</div></div>`};
+    return `<div class="seat ${play&&i===S.turn?'t':''} ${play&&!c?'done':''}" data-p="${i}" style="transform:rotate(${(t*9).toFixed(1)}deg) translateY(${(t*t*14).toFixed(0)}px)"><div class="tag"><span>${esc(p.name)}</span><b>${p.w?'tonton':play&&!c?'#'+p.rank:c}</b>${c===1?'<em>UNO!</em>':''}</div><div class="fan">${Array.from({length:f},(_,j)=>`<div class="c back mini" style="margin-left:${j?'calc(var(--cw)*-.36)':0};transform:rotate(${((j-(f-1)/2)*7).toFixed(1)}deg)"></div>`).join('')}</div></div>`};
   const ring=`<div class="ringw" style="transform:scaleX(${S.dir})"><svg class="ring" style="animation-delay:-${((Date.now()/1000)%8).toFixed(2)}s" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"><defs><marker id="ah" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto"><path d="M0 0L10 5L0 10z" fill="currentColor" stroke="none"/></marker></defs><path d="M16 30A40 40 0 0 1 84 30" marker-end="url(#ah)"/><path d="M84 70A40 40 0 0 1 16 70" marker-end="url(#ah)"/></svg></div>`;
   el.innerHTML=`<div class="gm">${bar}
   <div class="seats">${opp.map(seat).join('')}</div>
   <div class="mid"><div class="piles">${ring}
-    <div class="pile"><div id="dp" class="c back big ${canDraw?'dr':''} ${canDraw&&!any?'go':''}" ${canDraw?'onclick="A.draw()" role="button" tabindex="0"':''}></div>${S.draw.length}</div>
+    <div class="pile"><div id="dp" class="c back big ${canDraw?'dr':''} ${canDraw&&!any?'go':''}" ${canDraw?'onclick="A.draw()" role="button" tabindex="0"':''}></div>${S.draw.length}${canDraw?' · ambil':''}</div>
     <div id="disc">${card(top(S),S.color,'big')}</div></div>
     <div class="log">${esc(S.log)}</div><div class="st">${msg}</div></div>
-  <div class="me ${mine?'t':''} ${speakingSet.has(pid)?'talking':''}" data-vuid="${pid}"><div class="mehead"><div class="tag"><i class="mic-ind ${micOn?'on':''}" data-uid="${pid}">${micOn?'🎙️':'🔇'}</i><span>${esc(me.name)} (kamu)</span><b>${me.w?'tonton':play&&!n?'#'+me.rank:n}</b>${n===1?'<em>UNO!</em>':''}</div>${canDraw?'<button onclick="A.draw()">Ambil kartu</button>':''}${mine&&S.drew?'<button onclick="A.pass()">Lewati</button>':''}</div>
+  <div class="me ${mine?'t':''}"><div class="mehead"><div class="tag"><span>${esc(me.name)} (kamu)</span><b>${me.w?'tonton':play&&!n?'#'+me.rank:n}</b>${n===1?'<em>UNO!</em>':''}</div>${mine&&S.drew?'<button onclick="A.pass()">Lewati</button>':''}</div>
   ${play&&!n?`<div class="spec">${me.w?'Kamu menonton permainan ini.<br>Kamu ikut main saat host menekan Main lagi.':`Kamu selesai di peringkat #${me.rank}.<br>Kamu menonton sampai permainan berakhir.`}</div>`:''}<div class="hand">${order.map(([c,i],k)=>card(c,'',mine?(can(i)?'on':'off'):'',`data-i="${i}" style="margin-left:${k?mg:0}px"${can(i)?` onclick="A.tap(${i},event)"`:''}`)).join('')}</div></div></div>
   ${pick!==null?`<div class="ov"><div><b>Pilih warna</b><div class="cp">${['R','Y','G','B'].map(c=>`<button data-c="${c}" style="background:var(--${c})" onclick="A.col('${c}')">${COL[c]}</button>`).join('')}</div><p><button onclick="A.cancel()">Batal</button></p></div></div>`:''}
   ${S.status==='finished'?`<div class="ov"><div><h2 style="margin:0 0 6px">${me.w?'Permainan selesai':me.rank===1?'Kamu juara 1!':me.l?'Kamu kalah':'Kamu peringkat #'+me.rank}</h2><p class="mut" style="margin:0 0 8px">${esc(S.log||'')}</p>
@@ -1091,7 +726,7 @@ async function loadSDK(){
     const host=new URL(f('app')).host;sdkMsg='Memuat Firebase dari '+host+'…';stat();
     try{
       const[A1,F1,U1]=await Promise.all([T(f('app')),T(f('firestore')),T(f('auth'))]);
-      ({initializeApp}=A1);({getFirestore,doc,setDoc,onSnapshot,runTransaction,deleteDoc,getDoc,getDocs,collection,query,orderBy,limit,increment,addDoc,where}=F1);({getAuth,signInAnonymously}=U1);
+      ({initializeApp}=A1);({getFirestore,doc,setDoc,onSnapshot,runTransaction,deleteDoc,getDoc,getDocs,collection,query,orderBy,limit,increment,addDoc}=F1);({getAuth,signInAnonymously}=U1);
       const app=initializeApp(CFG);db=getFirestore(app);auth=getAuth(app);return
     }catch(e){errs.push(host+': '+(e&&e.message||e))}
   }
@@ -1104,7 +739,6 @@ async function connect(){
   ct=setTimeout(()=>{if(!pid&&!authErr){authErr='timeout';stat()}},10000);
   signInAnonymously(auth).then(async u=>{pid=u.user.uid;authErr=null;try{await loadMe()}catch(e){toast(errMsg(e))}ready=true;stat();render();const r=st.get('room');if(ME)listenInbox();if(r&&ME)enter(r);const g=new URLSearchParams(location.search).get('go');if(g&&ME){history.replaceState(null,'',location.pathname);setTimeout(()=>goTo(g),600)}}).catch(e=>{authErr=e.code||e.message;stat()})
 }
-addEventListener('beforeunload',()=>{if(room&&pid)stopVoice()});
 A.retry=connect;connect();
 </script>
 </body>
