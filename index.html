@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, userscalabel=no">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>UNO Online</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -306,13 +306,13 @@ setTimeout(function(){show('Game belum termuat. Cek internet, buka file lewat ho
 </script>
 <script type="module">
 const CFG={apiKey:"AIzaSyDF5n9QLR136niB935lG8ThtkI0lgfzaVY",authDomain:"game-5d4ed.firebaseapp.com",projectId:"game-5d4ed",storageBucket:"game-5d4ed.firebasestorage.app",messagingSenderId:"817751327735",appId:"1:817751327735:web:fa1a24d4f232e62f7ae4f2",measurementId:"G-CD48QGV9TZ"};
-let initializeApp,getFirestore,doc,setDoc,onSnapshot,runTransaction,deleteDoc,getDoc,getDocs,collection,query,orderBy,limit,increment,addDoc,getAuth,signInAnonymously,db,auth;
+let initializeApp,getFirestore,doc,setDoc,onSnapshot,runTransaction,deleteDoc,getDoc,getDocs,collection,query,orderBy,limit,increment,addDoc,getAuth,GoogleAuthProvider,signInWithPopup,signInWithRedirect,getRedirectResult,onAuthStateChanged,signOut,linkWithPopup,db,auth;
 
-const APP_VER='15';
+const APP_VER='16';
 const VOICE_API='https://uno-game-voice.jubandewan.workers.dev'; // isi dengan URL Worker penerbit token LiveKit, mis. https://uno-voice.namamu.workers.dev (lihat voice-worker.js) // naikkan setiap rilis; dipakai untuk mendeteksi versi baru
 const $=s=>document.querySelector(s);
 const st={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch{}}};
-let pid=null,authErr=null,ct,sdkMsg='Memuat Firebase…',sdkErr=''; // pid = uid Firebase Auth (anonim), diisi setelah login berhasil
+let pid=null,authErr=null,ct,sdkMsg='Memuat Firebase…',sdkErr=''; // pid = uid akun Google (sama di semua perangkat), diisi setelah login
 let room=null,S=null,unsub=null,pick=null,lastRect=null,tt,leaving=false;
 const COL={R:'Merah',Y:'Kuning',G:'Hijau',B:'Biru'};
 const esc=s=>String(s).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
@@ -542,36 +542,81 @@ addEventListener('resize',()=>{if(room&&S)render()});
 
 /* ===== Profil, teman & papan peringkat (dengan cache) ===== */
 const COLORS=['#e5383b','#f5b700','#27a05b','#2f6fdb','#8e44ad','#e67e22','#16a085','#34495e'],UNRE=/^@[a-z0-9_]{3,16}$/;
-let ME=null,ready=false,pcol=null;
+let ME=null,AU=null,ready=false,pcol=null,authStarted=false;
 const C={get:k=>{try{return JSON.parse(localStorage.getItem('uno_'+k))}catch{return null}},set:(k,v)=>{try{v==null?localStorage.removeItem('uno_'+k):localStorage.setItem('uno_'+k,JSON.stringify(v))}catch{}}};
 const errMsg=e=>typeof e==='string'?e:e&&e.code==='permission-denied'?'Ditolak Firestore rules — pastikan rules terbaru sudah dipublish':'Gagal: '+((e&&(e.code||e.message))||e);
 const avatar=(p,z=30)=>`<i class="av" style="background:${p.color};width:${z}px;height:${z}px;font-size:${z*.45}px">${esc((p.name||'?')[0].toUpperCase())}</i>`;
 // Versi data publik: meta/app.v naik setiap ada perubahan profil/skor. Cache dipakai selama versinya sama.
 const ver=async()=>{const d=await getDoc(doc(db,'meta','app'));return d.exists()?d.data().v:0};
 const bump=()=>setDoc(doc(db,'meta','app'),{v:increment(1)},{merge:true}).catch(()=>{});
-async function loadMe(){
-  const c=C.get('me');if(c&&c.uid===pid){ME=c;return} // profil sendiri hanya berubah lewat perangkat ini, jadi cache dipercaya
+async function loadMe(){ // selalu ambil dari server: akun yang sama bisa dipakai di banyak perangkat
   const d=await getDoc(doc(db,'players',pid));ME=d.exists()?{uid:pid,...d.data()}:null;C.set('me',ME)
 }
-async function login(){
-  const un=$('#un').value.trim().toLowerCase().replace(/^(?!@)/,'@'),nm=$('#nm').value.trim(),err=m=>{$('#lerr').textContent=m};
-  if(!UNRE.test(un))return err('Username diawali @, lalu 3–16 huruf kecil, angka, atau _');
-  if(!nm||nm.length>14)return err('Nama tampilan wajib diisi (maks. 14 karakter)');
-  err('Memproses…');
-  try{
-    ME=await runTransaction(db,async t=>{
-      const ur=doc(db,'usernames',un),u=await t.get(ur);
-      if(u.exists()){
-        if(u.data().uid!==pid)throw'Username sudah dimiliki pemain lain';
-        const d=await t.get(doc(db,'players',pid));if(!d.exists())throw'Username sudah dimiliki pemain lain';
-        return{uid:pid,...d.data()} // masuk kembali di perangkat yang sama
-      }
-      const pr={username:un,name:nm,color:COLORS[Math.random()*COLORS.length|0],games:0,wins:0,points:0};
-      t.set(doc(db,'players',pid),pr);t.set(ur,{uid:pid});return{uid:pid,...pr}
-    });
-    C.set('me',ME);bump();render();listenInbox()
-  }catch(e){err(errMsg(e))}
+const gp=()=>{const p=new GoogleAuthProvider();p.setCustomParameters({prompt:'select_account'});return p};
+function authMsg(e){
+  const c=(e&&e.code)||'';
+  return c==='auth/unauthorized-domain'?'Domain '+location.hostname+' belum diizinkan. Tambahkan di Firebase Console → Authentication → Settings → Authorized domains.'
+   :c==='auth/operation-not-allowed'?'Aktifkan Google di Firebase Console → Authentication → Sign-in method.'
+   :c==='auth/network-request-failed'?'Tidak bisa menjangkau Firebase. Cek koneksi internet.'
+   :c==='auth/credential-already-in-use'?'Akun Google ini sudah terdaftar di akun lain.'
+   :c==='auth/account-exists-with-different-credential'?'Email ini sudah dipakai metode login lain.'
+   :'Gagal masuk: '+(c||(e&&e.message)||e)
 }
+function resetSession(){ // dipanggil saat keluar akun
+  unsubIn&&unsubIn();unsubIn=null;inbox={};NB=0;updBadge();ME=null;pid=null;
+  ['me','fr','lb','rg','last'].forEach(k=>C.set(k,null));if(room)detach()
+}
+function startAuth(){
+  if(authStarted)return;authStarted=true;
+  getRedirectResult(auth).catch(e=>toast(authMsg(e)));
+  onAuthStateChanged(auth,async u=>{
+    try{
+      if(u&&u.isAnonymous){pid=u.uid;await loadMe();if(!ME){await signOut(auth);return}} // sesi anonim lama dipertahankan hanya jika sudah punya profil
+      AU=u||null;
+      if(u){pid=u.uid;await loadMe()}else resetSession()
+    }catch(e){toast(errMsg(e))}
+    ready=true;stat();render();
+    if(ME){listenInbox();const r=st.get('room');if(r)enter(r);const g=new URLSearchParams(location.search).get('go');if(g){history.replaceState(null,'',location.pathname);setTimeout(()=>goTo(g),600)}}
+  });
+  document.addEventListener('visibilitychange',async()=>{ // data akun bisa berubah dari perangkat lain
+    if(document.hidden||!ME||!pid)return;const o=JSON.stringify(ME);
+    try{await loadMe();if(JSON.stringify(ME)!==o&&!room)render()}catch(e){}
+  })
+}
+Object.assign(A,{
+  async google(){
+    const el=$('#lerr');if(el)el.textContent='';
+    try{await signInWithPopup(auth,gp())}
+    catch(e){
+      const c=e&&e.code;if(c==='auth/popup-closed-by-user'||c==='auth/cancelled-popup-request')return;
+      if(c==='auth/popup-blocked'||c==='auth/operation-not-supported-in-this-environment'){try{await signInWithRedirect(auth,gp());return}catch(x){e=x}}
+      const m=authMsg(e);if($('#lerr'))$('#lerr').textContent=m;else toast(m)
+    }
+  },
+  async linkGoogle(){
+    try{await linkWithPopup(auth.currentUser,gp());AU=auth.currentUser;toast('Akun Google terhubung — sekarang bisa dipakai di perangkat lain');if(!room)render();if($('#pnl .pn'))openProfile()}
+    catch(e){const c=e&&e.code;if(c!=='auth/popup-closed-by-user'&&c!=='auth/cancelled-popup-request')toast(authMsg(e))}
+  },
+  async logout(){
+    const anon=!!(AU&&AU.isAnonymous);
+    if(!(await askConfirm({title:'Keluar akun?',text:anon?'Akun ini belum terhubung ke Google. Jika keluar, progresmu TIDAK bisa dipulihkan. Hubungkan Google dulu.':'Kamu bisa masuk lagi dengan akun Google yang sama di perangkat mana pun.',ok:'Keluar',icon:'logout',danger:anon})))return;
+    A.close();await signOut(auth)
+  },
+  async setup(){ // profil pertama setelah daftar: nickname wajib, username opsional
+    const nm=$('#nm').value.trim(),un=$('#un').value.trim().toLowerCase().replace(/^(?!@)(?=.)/,'@'),err=m=>{$('#serr').textContent=m};
+    if(!nm||nm.length>14)return err('Nickname wajib diisi (maks. 14 karakter)');
+    if(un&&!UNRE.test(un))return err('Username diawali @, lalu 3–16 huruf kecil, angka, atau _');
+    err('Memproses…');
+    try{
+      ME=await runTransaction(db,async t=>{
+        const pr={name:nm,color:COLORS[Math.random()*COLORS.length|0],games:0,wins:0,points:0};
+        if(un){const ur=doc(db,'usernames',un),u=await t.get(ur);if(u.exists()&&u.data().uid!==pid)throw'Username sudah dimiliki pemain lain';if(!u.exists())t.set(ur,{uid:pid});pr.username=un}
+        t.set(doc(db,'players',pid),pr);return{uid:pid,...pr}
+      });
+      C.set('me',ME);bump();render();listenInbox()
+    }catch(e){err(errMsg(e))}
+  }
+});
 async function recordGame(S){ // dipanggil di setiap pembaruan room; mencatat skor tepat sekali per permainan (berdasarkan id permainan)
   const mp=S.players.find(p=>p.id===pid);
   if(!ME||!mp||!mp.g||!(mp.rank>0)||S.status==='playing'||C.get('rg')===mp.g)return;
@@ -604,7 +649,7 @@ async function findUser(q){
 }
 const PN=()=>$('#pnl');
 const panel=(t,b)=>{rcOpen=false;PN().innerHTML=`<div class="ov" onclick="if(event.target===this)A.close()"><div class="pn"><div class="bar"><b>${t}</b><button onclick="A.close()">Tutup</button></div>${b}</div></div>`};
-const urow=(x,extra='',rank='')=>`<li class="${x.uid===pid?'you':''}">${rank}${avatar(x)}<span><b>${esc(x.name)}</b><small class="mut">${esc(x.username)}</small></span>${extra}</li>`;
+const urow=(x,extra='',rank='')=>`<li class="${x.uid===pid?'you':''}">${rank}${avatar(x)}<span><b>${esc(x.name)}</b><small class="mut">${x.username?esc(x.username):'belum ada username'}</small></span>${extra}</li>`;
 async function openLB(tab='all'){
   panel('Papan peringkat',`<div class="tabs"><button class="${tab==='all'?'p':''}" onclick="A.lb('all')">Global</button><button class="${tab==='fr'?'p':''}" onclick="A.lb('fr')">Teman</button></div><div id="pb" class="mut">Memuat…</div>`);
   try{
@@ -625,25 +670,42 @@ async function listFriends(){
   }catch(e){el.textContent=errMsg(e)}
 }
 function openFriends(){
-  panel('Teman',`<div class="row"><input id="fq" placeholder="Cari username, mis. @budi" autocapitalize="none" autocomplete="off" onkeydown="if(event.key==='Enter')A.find()"><button class="p" onclick="A.find()">Cari</button></div><div id="fres" style="margin-top:8px"></div><div id="fl" class="mut" style="margin-top:8px">Memuat…</div>`);listFriends()
+  panel('Teman',`${ME.username?`<div class="row"><input id="fq" placeholder="Cari username, mis. @budi" autocapitalize="none" autocomplete="off" onkeydown="if(event.key==='Enter')A.find()"><button class="p" onclick="A.find()">Cari</button></div>`:`<div class="card" style="margin:0 0 8px"><b>Atur username dulu</b><p class="mut" style="margin:4px 0 10px;font-size:14px">Username (berawalan @) dibutuhkan untuk mencari dan menambah teman.</p><button class="p" onclick="A.panel('pf')">${ic('account-edit')} Atur username</button></div>`}<div id="fres" style="margin-top:8px"></div><div id="fl" class="mut" style="margin-top:8px">Memuat…</div>`);listFriends()
 }
 function openProfile(){
   pcol=ME.color;
-  panel('Profil',`<div style="text-align:center">${avatar(ME,64)}<div class="mut" style="margin-top:6px">${esc(ME.username)} · username tidak bisa diubah</div></div>
-  <label class="mut">Nama tampilan</label><input id="pn" maxlength="14" value="${esc(ME.name)}">
+  panel('Profil',`<div style="text-align:center">${avatar(ME,64)}<div class="mut" style="margin-top:6px;font-size:13px">${esc((AU&&AU.email)||'')}${AU&&AU.isAnonymous?' · akun belum terhubung':''}</div></div>
+  <label class="mut">Nickname</label><input id="pn" maxlength="14" value="${esc(ME.name)}">
+  <label class="mut">Username — dibutuhkan untuk mencari &amp; menambah teman</label><input id="pu" maxlength="17" autocapitalize="none" autocomplete="off" placeholder="@username" value="${esc(ME.username||'')}">
   <label class="mut">Warna avatar</label><div class="cols">${COLORS.map(c=>`<button class="sw ${c===pcol?'sel':''}" style="background:${c}" onclick="A.pick('${c}',this)" aria-label="${c}"></button>`).join('')}</div>
-  <p class="mut">${ME.games} main · ${ME.wins} menang · ${ME.points} poin</p><button class="p" onclick="A.saveP()">Simpan</button><div id="perr" style="margin-top:8px;font-size:14px"></div>`)
+  <p class="mut">${ME.games} main · ${ME.wins} menang · ${ME.points} poin</p><button class="p" onclick="A.saveP()">${ic('content-save')} Simpan</button><div id="perr" style="margin-top:8px;font-size:14px"></div>
+  ${AU&&AU.isAnonymous?`<button class="g" style="margin-top:10px;width:100%" onclick="A.linkGoogle()">${ic('google')} Hubungkan akun Google</button>`:''}
+  <button style="margin-top:10px;width:100%" onclick="A.logout()">${ic('logout')} Keluar akun</button>`)
 }
 Object.assign(A,{
-  login,
   panel(n){n==='lb'?openLB('all'):n==='fr'?openFriends():openProfile()},
   lb:openLB,close(){PN().innerHTML=''},
   pick(c,b){pcol=c;document.querySelectorAll('.sw').forEach(x=>x.classList.toggle('sel',x===b))},
   async saveP(){
-    const nm=$('#pn').value.trim(),e=$('#perr');if(!nm||nm.length>14){e.textContent='Nama wajib diisi (maks. 14 karakter)';return}
-    try{await setDoc(doc(db,'players',pid),{name:nm,color:pcol},{merge:true});ME={...ME,name:nm,color:pcol};C.set('me',ME);bump();
-      e.style.color='var(--G)';e.textContent='Tersimpan';if(!room)render()}
-    catch(x){e.style.color='var(--R)';e.textContent=errMsg(x)}
+    const nm=$('#pn').value.trim(),un=$('#pu').value.trim().toLowerCase().replace(/^(?!@)(?=.)/,'@'),e=$('#perr'),old=ME.username||'';
+    const err=m=>{e.style.color='var(--R)';e.textContent=m};
+    if(!nm||nm.length>14)return err('Nickname wajib diisi (maks. 14 karakter)');
+    if(un&&!UNRE.test(un))return err('Username diawali @, lalu 3–16 huruf kecil, angka, atau _');
+    if(!un&&old)return err('Username tidak bisa dikosongkan, hanya bisa diganti');
+    e.style.color='';e.textContent='Menyimpan…';
+    try{
+      if(un&&un!==old){ // klaim username baru, lepas yang lama (satu transaksi)
+        await runTransaction(db,async t=>{
+          const nr=doc(db,'usernames',un),n=await t.get(nr);
+          if(n.exists()&&n.data().uid!==pid)throw'Username sudah dimiliki pemain lain';
+          if(!n.exists())t.set(nr,{uid:pid});
+          t.set(doc(db,'players',pid),{name:nm,color:pcol,username:un},{merge:true});
+          if(old)t.delete(doc(db,'usernames',old))
+        });
+        ME={...ME,name:nm,color:pcol,username:un}
+      }else{await setDoc(doc(db,'players',pid),{name:nm,color:pcol},{merge:true});ME={...ME,name:nm,color:pcol}}
+      C.set('me',ME);C.set('fr',null);bump();e.style.color='var(--G)';e.textContent='Tersimpan';if(!room)render()
+    }catch(x){err(errMsg(x))}
   },
   async find(){
     const el=$('#fres');el.style.color='';el.textContent='Mencari…';
@@ -793,17 +855,18 @@ Object.assign(A,{
   async send(uid){
     const el=$('#ci'),t=el.value.trim();if(!t)return;el.value='';const ts=Date.now();
     try{await addDoc(collection(db,'chats',[pid,uid].sort().join('_'),'msgs'),{from:pid,text:t,ts});
-      await setDoc(doc(db,'players',uid,'inbox','c_'+pid),{type:'chat',from:pid,name:ME.name,username:ME.username,text:t.slice(0,80),ts})}
+      await setDoc(doc(db,'players',uid,'inbox','c_'+pid),{type:'chat',from:pid,name:ME.name,username:ME.username||'',text:t.slice(0,80),ts})}
     catch(e){toast(errMsg(e))}
   },
   dismiss(k){delInbox(k);delete inbox[k];NB=Object.keys(inbox).length;updBadge();listFriends()},
   async befriend(uid){
+    if(!ME.username){toast('Atur username dulu untuk menambah teman');return}
     let x=PN().__f&&PN().__f.uid===uid?PN().__f:null;
     try{
       if(!x){const d=await getDoc(doc(db,'players',uid));if(!d.exists())throw'Pengguna tidak ditemukan';x={uid,...d.data()}}
       await setDoc(doc(db,'players',pid,'friends',uid),{uid});
       const c=C.get('fr');if(c&&!c.rows.some(r=>r.uid===uid)){c.rows.push(x);C.set('fr',c)}
-      await setDoc(doc(db,'players',uid,'inbox','f_'+pid),{type:'friend',from:pid,name:ME.name,username:ME.username,text:'menambahkanmu sebagai teman',ts:Date.now()}).catch(()=>{});
+      await setDoc(doc(db,'players',uid,'inbox','f_'+pid),{type:'friend',from:pid,name:ME.name,username:ME.username||'',text:'menambahkanmu sebagai teman',ts:Date.now()}).catch(()=>{});
       delInbox('f_'+uid);toast('Berteman dengan '+x.name+' — notifikasi terkirim');sfx('wild');
       const f=$('#fres');if(f)f.textContent='';listFriends()
     }catch(e){toast(errMsg(e))}
@@ -922,18 +985,26 @@ function render(){
     ringSeen=false;
     const h='<h1 class="logo"><span>U</span><span>N</span><span>O</span></h1>'+hero();
     if(!ready){el.innerHTML=h+'<div id="stat" class="mut" style="text-align:center"></div>';stat();return}
+    if(!AU){
+      el.innerHTML=h+`<section class="card"><b style="font-size:18px">Masuk untuk bermain</b><p class="mut" style="margin:4px 0 14px;font-size:14px">Pakai akun Google agar skor, level, dan temanmu ikut ke perangkat mana pun.</p>
+      <div class="col"><button class="p big" onclick="A.google()">${ic('google')} Masuk dengan Google</button><div id="lerr" style="color:var(--R);font-size:14px;font-weight:600"></div><div id="stat" class="mut"></div></div></section>`;
+      stat();return
+    }
     if(!ME){
-      el.innerHTML=h+`<section class="card"><b style="font-size:18px">Masuk untuk bermain</b><p class="mut" style="margin:4px 0 12px;font-size:14px">Simpan skor, tambah teman, dan main bareng.</p>
-      <div class="col"><input id="un" placeholder="@username" maxlength="17" autocapitalize="none" autocomplete="off"><input id="nm" placeholder="Nama tampilan (bisa diubah nanti)" maxlength="14" autocomplete="off">
-      <button class="p big need" onclick="A.login()">${ic('login')} Masuk / Daftar</button><div id="lerr" style="color:var(--R);font-size:14px;font-weight:600"></div>
-      <p class="mut" style="font-size:12px;margin:0">Username unik dan terkunci di perangkat ini. Memakainya di perangkat lain akan ditolak.</p><div id="stat" class="mut"></div></div></section>`;
+      el.innerHTML=h+`<section class="card"><b style="font-size:18px">Selamat datang${AU.displayName?', '+esc(AU.displayName.split(' ')[0]):''}!</b><p class="mut" style="margin:4px 0 12px;font-size:14px">Lengkapi profilmu untuk mulai bermain.</p>
+      <div class="col"><label class="mut" style="font-size:13px">Nickname</label><input id="nm" placeholder="Nickname" maxlength="14" value="${esc((AU.displayName||'').slice(0,14))}" autocomplete="off">
+      <label class="mut" style="font-size:13px">Username (opsional)</label><input id="un" placeholder="@username" maxlength="17" autocapitalize="none" autocomplete="off">
+      <p class="mut" style="font-size:12px;margin:0">Username dibutuhkan untuk mencari dan menambah teman. Boleh diisi nanti, dan bisa diganti kapan saja di Profil.</p>
+      <button class="p big" onclick="A.setup()">${ic('check-bold')} Mulai bermain</button><div id="serr" style="color:var(--R);font-size:14px;font-weight:600"></div>
+      <button onclick="A.logout()">${ic('logout')} Ganti akun Google</button><div id="stat" class="mut"></div></div></section>`;
       stat();return
     }
     const lv=Math.floor(ME.points/100)+1,xp=ME.points%100,ttl=lv>=12?'Legenda':lv>=8?'Master':lv>=5?'Jagoan':lv>=3?'Pemain':'Pemula',wr=ME.games?Math.round(ME.wins*100/ME.games):0;
     el.innerHTML=h+`<section class="card prof"><div class="avb">${avatar(ME,64)}<span class="lv">Lv ${lv}</span></div>
-      <div style="flex:1;min-width:0"><div class="nmx">${esc(ME.name)}</div><div class="mut" style="font-size:13px">${esc(ME.username)} · ${ttl}</div>
+      <div style="flex:1;min-width:0"><div class="nmx">${esc(ME.name)}</div><div class="mut" style="font-size:13px">${ME.username?esc(ME.username):'belum ada username'} · ${ttl}</div>
       <div class="xp"><i style="width:${xp}%"></i></div><div class="mut" style="font-size:11px">${xp}/100 XP menuju Lv ${lv+1}</div></div></section>
     <section class="stats">${[['cards-playing',ME.games,'Main'],['trophy',ME.wins,'Menang'],['percent',wr+'%','Rasio'],['star',ME.points,'Poin']].map(([i,v,l])=>`<div class="chip">${ic(i)}<b>${v}</b><small>${l}</small></div>`).join('')}</section>
+    ${AU.isAnonymous?`<section class="card"><b>Akun belum terhubung</b><p class="mut" style="margin:4px 0 10px;font-size:13px">Hubungkan Google agar progresmu aman dan bisa dipakai di perangkat lain.</p><button class="g" onclick="A.linkGoogle()">${ic('google')} Hubungkan Google</button></section>`:''}
     <div class="col" style="margin-top:14px"><button class="p big need" onclick="A.create()">${ic('plus-circle')} Buat room baru</button>
     <div class="row"><input id="code" placeholder="KODE ROOM" maxlength="4" autocapitalize="characters" autocomplete="off" style="text-align:center;letter-spacing:4px"><button class="ib" onclick="A.paste()" aria-label="Tempel kode room" title="Tempel kode room">${ic('content-paste')}</button><button class="g need" onclick="A.join()">${ic('login')} Gabung</button></div>
     <button id="inst" ${dip&&!inApp()?'':'hidden'} onclick="A.install()">${ic('download')} Pasang aplikasi</button>
@@ -977,7 +1048,7 @@ render();window.__ok=1;
 const HINT={'sdk':'Library Firebase tidak bisa diunduh. Coba ganti jaringan (Wi-Fi ⇄ data seluler), matikan VPN atau pemblokir iklan, lalu coba lagi.','auth/admin-restricted-operation':'Login anonim belum diizinkan. Aktifkan Anonymous di Authentication → Sign-in method, lalu cek Settings → User actions → Enable create (sign-up).','auth/operation-not-allowed':'Aktifkan Anonymous di Firebase Console → Authentication → Sign-in method.','auth/network-request-failed':'Tidak bisa menjangkau Firebase. Cek internet, dan buka file lewat server atau hosting, bukan pratinjau chat.','timeout':'Firebase tidak merespons. Cek internet, dan buka file lewat server atau hosting, bukan pratinjau chat.'};
 function stat(){
   const e=$('#stat');if(!e)return;
-  e.innerHTML=pid?'':authErr?`<span style="color:var(--R)">${authErr==='sdk'?'Firebase gagal dimuat.':'Gagal login ('+esc(authErr)+').'}</span> ${esc(HINT[authErr]||'Periksa konfigurasi Firebase.')}${authErr==='sdk'?'<br><small>'+esc(sdkErr)+'</small><br>':''} <button onclick="A.retry()">Coba lagi</button>`:esc(sdkMsg);
+  e.innerHTML=ready?'':authErr?`<span style="color:var(--R)">${authErr==='sdk'?'Firebase gagal dimuat.':'Gagal login ('+esc(authErr)+').'}</span> ${esc(HINT[authErr]||'Periksa konfigurasi Firebase.')}${authErr==='sdk'?'<br><small>'+esc(sdkErr)+'</small><br>':''} <button onclick="A.retry()">Coba lagi</button>`:esc(sdkMsg);
   document.querySelectorAll('.need').forEach(b=>b.disabled=!pid)
 }
 const SRC=[n=>`https://www.gstatic.com/firebasejs/10.12.2/firebase-${n}.js`,n=>`https://cdn.jsdelivr.net/npm/firebase@10.12.2/${n}/+esm`,n=>`https://esm.sh/firebase@10.12.2/${n}`];
@@ -987,18 +1058,16 @@ async function loadSDK(){
     const host=new URL(f('app')).host;sdkMsg='Memuat Firebase dari '+host+'…';stat();
     try{
       const[A1,F1,U1]=await Promise.all([T(f('app')),T(f('firestore')),T(f('auth'))]);
-      ({initializeApp}=A1);({getFirestore,doc,setDoc,onSnapshot,runTransaction,deleteDoc,getDoc,getDocs,collection,query,orderBy,limit,increment,addDoc}=F1);({getAuth,signInAnonymously}=U1);
+      ({initializeApp}=A1);({getFirestore,doc,setDoc,onSnapshot,runTransaction,deleteDoc,getDoc,getDocs,collection,query,orderBy,limit,increment,addDoc}=F1);({getAuth,GoogleAuthProvider,signInWithPopup,signInWithRedirect,getRedirectResult,onAuthStateChanged,signOut,linkWithPopup}=U1);
       const app=initializeApp(CFG);db=getFirestore(app);auth=getAuth(app);return
     }catch(e){errs.push(host+': '+(e&&e.message||e))}
   }
   throw new Error(errs.join(' | '))
 }
 async function connect(){
-  authErr=null;stat();clearTimeout(ct);
+  authErr=null;stat();
   if(!db){try{await loadSDK()}catch(e){authErr='sdk';sdkErr=e.message;stat();return}}
-  sdkMsg='Menghubungkan ke server…';stat();
-  ct=setTimeout(()=>{if(!pid&&!authErr){authErr='timeout';stat()}},10000);
-  signInAnonymously(auth).then(async u=>{pid=u.user.uid;authErr=null;try{await loadMe()}catch(e){toast(errMsg(e))}ready=true;stat();render();const r=st.get('room');if(ME)listenInbox();if(r&&ME)enter(r);const g=new URLSearchParams(location.search).get('go');if(g&&ME){history.replaceState(null,'',location.pathname);setTimeout(()=>goTo(g),600)}}).catch(e=>{authErr=e.code||e.message;stat()})
+  sdkMsg='Memeriksa login…';stat();startAuth()
 }
 A.retry=connect;connect();
 </script>
