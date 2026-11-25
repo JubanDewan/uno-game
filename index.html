@@ -275,6 +275,21 @@ button.ni .dot{position:absolute;top:-2px;left:calc(50% + 8px);margin:0;min-widt
   h1.logo{font-size:40px}.hero{display:none}
 }
 @media(max-width:380px){.stats{gap:6px}.chip b{font-size:15px}h1.logo{font-size:52px}}
+/* dialog konfirmasi (pengganti alert) & tombol salin/tempel */
+.dov{position:fixed;inset:0;background:#000b;display:grid;place-items:center;padding:24px;z-index:200;animation:dfade .15s ease-out}
+@keyframes dfade{from{opacity:0}}
+.dbox{position:relative;background:var(--pn);color:var(--fg);border:3px solid var(--ol);border-radius:26px;box-shadow:0 6px 0 var(--ol);max-width:340px;width:100%;padding:44px 20px 20px;text-align:center;animation:dpop .28s cubic-bezier(.2,.9,.3,1.4)}
+@keyframes dpop{from{transform:scale(.8) translateY(20px);opacity:0}}
+.dbox.dg{animation:dpop .28s cubic-bezier(.2,.9,.3,1.4),dshake .4s .2s}
+@keyframes dshake{25%{transform:translateX(-6px)}50%{transform:translateX(6px)}75%{transform:translateX(-3px)}}
+.dic{position:absolute;left:50%;top:-34px;transform:translateX(-50%);width:68px;height:68px;border-radius:50%;background:var(--Y);color:#2b1d00;border:3px solid var(--ol);box-shadow:0 4px 0 var(--ol);display:grid;place-items:center;font-size:36px}
+.dg .dic{background:var(--R);color:#fff}
+.dbox h3{margin:0 0 6px;font-size:22px}.dbox p{margin:0;color:var(--mut);font-size:14px;line-height:1.4}
+.drow{display:flex;gap:10px;margin-top:18px}.drow button{flex:1}
+button.r{background:var(--R);color:#fff}
+.cpb{margin-top:10px}
+button.chipr{gap:6px;cursor:pointer}button.chipr .mdi{font-size:14px}
+.row .ib{flex:none}
 </style>
 </head>
 <body>
@@ -282,6 +297,7 @@ button.ni .dot{position:absolute;top:-2px;left:calc(50% + 8px);margin:0;min-widt
 <div id="toast"></div>
 <div id="ntf" role="alert"></div>
 <div id="pnl"></div>
+<div id="dlg"></div>
 <div id="vc" style="position:fixed;left:-9999px;top:0"></div>
 <script>
 (function(){var show=function(m){var a=document.getElementById('app');if(a&&!window.__ok)a.innerHTML='<p style="padding:20px;color:#c0392b;font:15px system-ui">'+m+'</p>'};
@@ -292,7 +308,7 @@ setTimeout(function(){show('Game belum termuat. Cek internet, buka file lewat ho
 const CFG={apiKey:"AIzaSyDF5n9QLR136niB935lG8ThtkI0lgfzaVY",authDomain:"game-5d4ed.firebaseapp.com",projectId:"game-5d4ed",storageBucket:"game-5d4ed.firebasestorage.app",messagingSenderId:"817751327735",appId:"1:817751327735:web:fa1a24d4f232e62f7ae4f2",measurementId:"G-CD48QGV9TZ"};
 let initializeApp,getFirestore,doc,setDoc,onSnapshot,runTransaction,deleteDoc,getDoc,getDocs,collection,query,orderBy,limit,increment,addDoc,getAuth,signInAnonymously,db,auth;
 
-const APP_VER='14';
+const APP_VER='15';
 const VOICE_API='https://uno-game-voice.jubandewan.workers.dev'; // isi dengan URL Worker penerbit token LiveKit, mis. https://uno-voice.namamu.workers.dev (lihat voice-worker.js) // naikkan setiap rilis; dipakai untuk mendeteksi versi baru
 const $=s=>document.querySelector(s);
 const st={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch{}}};
@@ -418,7 +434,7 @@ const A=window.A={
   async leave(){
     const code=room;
     if(S&&S.host===pid){ // host keluar = menutup room
-      if(!confirm('Tutup room? Semua pemain akan otomatis keluar.'))return;
+      if(!(await askConfirm({title:'Tutup room?',text:'Semua pemain akan otomatis keluar dan riwayat chat room ini dihapus. Permainan yang sedang berjalan akan berakhir.',ok:'Ya, tutup',icon:'alert',danger:true})))return;
       leaving=true;if(!(await delRoom(code))){leaving=false;return toast('Gagal menutup room — periksa rules Firestore')}
     }else if(S){leaving=true;await act(s=>removeP(s,pid))}
     detach()
@@ -862,6 +878,39 @@ async function voiceMute(){
 }
 Object.assign(A,{voice(){vOn?voiceMute():voiceJoin()},vleave(){voiceLeave()}});
 
+/* ===== Salin / tempel kode room & dialog konfirmasi (CSS, bukan alert) ===== */
+async function copyText(t){
+  try{await navigator.clipboard.writeText(t);return true}catch(e){}
+  try{const a=document.createElement('textarea');a.value=t;a.setAttribute('readonly','');a.style.cssText='position:fixed;left:-9999px;top:0;opacity:0';document.body.appendChild(a);a.select();a.setSelectionRange(0,99);const ok=document.execCommand('copy');a.remove();return ok}catch(e){return false}
+}
+function askConfirm({title,text,ok='Ya',cancel='Batal',icon='alert-circle',danger=false}){
+  return new Promise(res=>{
+    const d=$('#dlg');if(d.firstChild){res(false);return}
+    const kd=e=>{if(e.key==='Escape')done(false)};
+    const done=v=>{document.removeEventListener('keydown',kd);d.innerHTML='';res(v)};
+    d.innerHTML=`<div class="dov" role="alertdialog" aria-modal="true" aria-labelledby="dlt"><div class="dbox ${danger?'dg':''}"><div class="dic">${ic(icon)}</div><h3 id="dlt">${esc(title)}</h3><p>${esc(text)}</p><div class="drow"><button id="dno">${esc(cancel)}</button><button id="dyes" class="${danger?'r':'p'}">${esc(ok)}</button></div></div></div>`;
+    d.querySelector('#dno').onclick=()=>done(false);d.querySelector('#dyes').onclick=()=>done(true);
+    d.querySelector('.dov').onclick=e=>{if(e.target.classList.contains('dov'))done(false)};
+    document.addEventListener('keydown',kd);d.querySelector('#dno').focus()
+  })
+}
+Object.assign(A,{
+  async copy(b){
+    if(!room)return;const ok=await copyText(room);
+    if(!ok){toast('Gagal menyalin — catat kodenya: '+room);return}
+    toast('Kode room '+room+' disalin');
+    if(b&&!b.dataset.t){b.dataset.t='1';const h=b.innerHTML;b.innerHTML=ic('check')+' Tersalin';setTimeout(()=>{b.innerHTML=h;delete b.dataset.t},1600)}
+  },
+  async paste(){
+    const inp=$('#code');if(!inp)return;let t='';
+    try{t=await navigator.clipboard.readText()}catch(e){toast('Izin tempel ditolak — tekan lama pada kolom lalu pilih Tempel');inp.focus();return}
+    t=(t||'').trim();
+    const m=/^[A-Za-z]{4}$/.test(t)?t.toUpperCase():(t.match(/\b[A-Z]{4}\b/)||[])[0];
+    if(!m){toast('Tidak ada kode room (4 huruf) di clipboard');return}
+    inp.value=m;toast('Kode '+m+' ditempel')
+  }
+});
+
 /* ===== Tampilan ===== */
 const card=(c,col,cls='',at='')=>{ // kartu ala UNO asli: sisi berwarna, oval putih, angka besar, angka kecil di sudut
   const w=c[0]==='W',cc=w&&!col?'W':col||c[0],l=lab(c),big=w&&!col?(c==='WF'?'+4':''):l,cor=w&&!col&&c!=='WF'?'':l;
@@ -886,15 +935,15 @@ function render(){
       <div class="xp"><i style="width:${xp}%"></i></div><div class="mut" style="font-size:11px">${xp}/100 XP menuju Lv ${lv+1}</div></div></section>
     <section class="stats">${[['cards-playing',ME.games,'Main'],['trophy',ME.wins,'Menang'],['percent',wr+'%','Rasio'],['star',ME.points,'Poin']].map(([i,v,l])=>`<div class="chip">${ic(i)}<b>${v}</b><small>${l}</small></div>`).join('')}</section>
     <div class="col" style="margin-top:14px"><button class="p big need" onclick="A.create()">${ic('plus-circle')} Buat room baru</button>
-    <div class="row"><input id="code" placeholder="KODE ROOM" maxlength="4" autocapitalize="characters" autocomplete="off" style="text-align:center;letter-spacing:4px"><button class="g need" onclick="A.join()">${ic('login')} Gabung</button></div>
+    <div class="row"><input id="code" placeholder="KODE ROOM" maxlength="4" autocapitalize="characters" autocomplete="off" style="text-align:center;letter-spacing:4px"><button class="ib" onclick="A.paste()" aria-label="Tempel kode room" title="Tempel kode room">${ic('content-paste')}</button><button class="g need" onclick="A.join()">${ic('login')} Gabung</button></div>
     <button id="inst" ${dip&&!inApp()?'':'hidden'} onclick="A.install()">${ic('download')} Pasang aplikasi</button>
     <div id="stat" class="mut" style="text-align:center"></div><div class="mut" style="font-size:12px;text-align:center">uno v${APP_VER}</div></div>${navHTML(1)}`;
     stat();return
   }
-  const bar=`<div class="bar"><span class="row"><button class="ib" onclick="A.rchat()" aria-label="Chat room">${ic('chat')}<span class="dot rc" ${rcUnread?'':'hidden'}>${rcUnread>9?'9+':rcUnread}</span></button><span id="vgrp" class="row">${voiceBtns()}</span></span><span class="chipr">${room}</span><button class="ib" onclick="A.leave()" aria-label="${S.host===pid?'Tutup room':'Keluar'}" title="${S.host===pid?'Tutup room':'Keluar'}">${ic(S.host===pid?'close-circle':'logout')}</button></div>`;
+  const bar=`<div class="bar"><span class="row"><button class="ib" onclick="A.rchat()" aria-label="Chat room">${ic('chat')}<span class="dot rc" ${rcUnread?'':'hidden'}>${rcUnread>9?'9+':rcUnread}</span></button><span id="vgrp" class="row">${voiceBtns()}</span></span><button class="chipr" onclick="A.copy()" aria-label="Salin kode room" title="Salin kode room">${room}${ic('content-copy')}</button><button class="ib" onclick="A.leave()" aria-label="${S.host===pid?'Tutup room':'Keluar'}" title="${S.host===pid?'Tutup room':'Keluar'}">${ic(S.host===pid?'close-circle':'logout')}</button></div>`;
   if(S.status==='lobby'){
     ringSeen=false;const host=S.host===pid;
-    el.innerHTML=`${bar}<div class="card codec"><div class="mut" style="font-size:13px">Kode room</div><div class="code">${room}</div><div class="mut" style="font-size:13px">Bagikan kode ini ke temanmu · ${S.players.length}/10 pemain</div></div>
+    el.innerHTML=`${bar}<div class="card codec"><div class="mut" style="font-size:13px">Kode room</div><div class="code">${room}</div><div class="mut" style="font-size:13px">Bagikan kode ini ke temanmu · ${S.players.length}/10 pemain</div><button class="cpb" onclick="A.copy(this)">${ic('content-copy')} Salin kode</button></div>
     <div class="plg">${S.players.map(p=>`<div class="pcd ${speakers.has(p.id)?'spk':''}" data-u="${p.id}">${avatar({name:p.name,color:colOf(p)},38)}<span class="pnm">${esc(p.name)}${p.id===pid?' (kamu)':''}</span>${p.id===S.host?ic('crown'):''}${vPeers.has(p.id)?ic('microphone'):''}</div>`).join('')}</div>
     ${host?`<button class="p big" style="width:100%" onclick="A.start()" ${S.players.length<2?'disabled':''}>${S.players.length<2?'Tunggu minimal 2 pemain':ic('play')+' Mulai permainan'}</button>`:'<p class="mut" style="text-align:center">Menunggu host memulai…</p>'}${navHTML()}`;
     return
