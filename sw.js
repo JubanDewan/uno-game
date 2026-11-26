@@ -1,5 +1,5 @@
 // Service worker sederhana: jaringan dulu, cadangan dari cache. Permintaan Firebase tidak disentuh.
-const V='uno-v17';
+const V='uno-v18';
 self.addEventListener('install',()=>self.skipWaiting());
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==V).map(x=>caches.delete(x)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',e=>{
