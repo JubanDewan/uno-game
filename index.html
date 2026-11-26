@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, user-scalable=no">
 <title>UNO Online</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -297,6 +297,15 @@ button.chipr{gap:6px;cursor:pointer}button.chipr .mdi{font-size:14px}
 .hand .c:first-child{margin-left:auto}.hand .c:last-child{margin-right:auto}
 .hs{height:10px;margin:2px 26px 0;border:2px solid var(--ol);border-radius:6px;background:#0002;overflow:hidden}
 .hs i{display:block;height:100%;background:var(--Y);border-radius:3px;min-width:14px}
+/* transisi Zoom-to-Reveal */
+#zt{position:fixed;inset:0;z-index:-1;display:none;place-items:center;background:var(--ol);pointer-events:none}
+#zt .zc{display:flex;flex-direction:column;align-items:center;gap:16px;color:#fff;font-weight:700;letter-spacing:2px}
+#zt .c{--cw:84px;--ch:124px;width:84px;height:124px;font-size:34px;animation:zwob .9s ease-in-out infinite alternate}
+@keyframes zwob{from{transform:rotate(-6deg)}to{transform:rotate(6deg) translateY(-5px)}}
+#app.dealing{pointer-events:none}
+#app.dealing .hand .c,#app.dealing #disc{visibility:hidden}
+#app.dealing .sav .cnt{visibility:hidden}#app.dealrun .sav .cnt{visibility:visible}
+@keyframes cpop{from{transform:translateY(70px) scale(.3);opacity:0}}
 </style>
 </head>
 <body>
@@ -305,6 +314,7 @@ button.chipr{gap:6px;cursor:pointer}button.chipr .mdi{font-size:14px}
 <div id="ntf" role="alert"></div>
 <div id="pnl"></div>
 <div id="dlg"></div>
+<div id="zt" aria-hidden="true"><div class="zc"><div class="c back"></div><span>Memuat…</span></div></div>
 <div id="vc" style="position:fixed;left:-9999px;top:0"></div>
 <script>
 (function(){var show=function(m){var a=document.getElementById('app');if(a&&!window.__ok)a.innerHTML='<p style="padding:20px;color:#c0392b;font:15px system-ui">'+m+'</p>'};
@@ -315,7 +325,7 @@ setTimeout(function(){show('Game belum termuat. Cek internet, buka file lewat ho
 const CFG={apiKey:"AIzaSyDF5n9QLR136niB935lG8ThtkI0lgfzaVY",authDomain:"game-5d4ed.firebaseapp.com",projectId:"game-5d4ed",storageBucket:"game-5d4ed.firebasestorage.app",messagingSenderId:"817751327735",appId:"1:817751327735:web:fa1a24d4f232e62f7ae4f2",measurementId:"G-CD48QGV9TZ"};
 let initializeApp,getFirestore,doc,setDoc,onSnapshot,runTransaction,deleteDoc,getDoc,getDocs,collection,query,orderBy,limit,increment,addDoc,getAuth,GoogleAuthProvider,signInWithPopup,signInWithRedirect,getRedirectResult,onAuthStateChanged,signOut,linkWithPopup,db,auth;
 
-const APP_VER='17';
+const APP_VER='18';
 const VOICE_API='https://uno-game-voice.jubandewan.workers.dev'; // isi dengan URL Worker penerbit token LiveKit, mis. https://uno-voice.namamu.workers.dev (lihat voice-worker.js) // naikkan setiap rilis; dipakai untuk mendeteksi versi baru
 const $=s=>document.querySelector(s);
 const st={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch{}}};
@@ -481,13 +491,13 @@ addEventListener('pointerdown',()=>ac(),{once:true});
 /* ===== Animasi kartu ===== */
 const rect=q=>{const e=document.querySelector(q);return e&&e.getBoundingClientRect()};
 const cwv=()=>parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cw'))||58;
-function fly(from,to,html,delay,after){
+function fly(from,to,html,delay,after,dur=420){
   if(!from||!to){after&&after();return}
   const w=document.createElement('div');w.innerHTML=html;const c=w.firstChild;
   c.style.cssText+=`;position:fixed;left:${to.left}px;top:${to.top}px;width:${to.width}px;height:${to.height}px;margin:0;z-index:50;pointer-events:none;font-size:${to.width*.42}px`;
   document.body.appendChild(c);
   const dx=from.left+from.width/2-to.left-to.width/2,dy=from.top+from.height/2-to.top-to.height/2;
-  c.animate([{transform:`translate(${dx}px,${dy}px) scale(${from.width/to.width}) rotate(-12deg)`},{transform:'none'}],{duration:420,delay,easing:'cubic-bezier(.2,.8,.25,1)',fill:'backwards'}).onfinish=()=>{c.remove();after&&after()}
+  c.animate([{transform:`translate(${dx}px,${dy}px) scale(${from.width/to.width}) rotate(-12deg)`},{transform:'none'}],{duration:dur,delay,easing:'cubic-bezier(.2,.8,.25,1)',fill:'backwards'}).onfinish=()=>{c.remove();after&&after()}
 }
 function bindHS(){ // indikator posisi geser kartu di tangan
   const h=$('.hand'),t=$('.hs'),i=t&&t.firstChild;if(!h||!i)return;
@@ -522,7 +532,10 @@ function animRing(){ // meja berputar halus; arah putar mengikuti arah permainan
 }
 function fx(a,b){ // bandingkan state lama & baru: animasi + suara
   if(!a||!b)return;
-  if(a.status!=='playing'){b.status==='playing'&&sfx('start');return}
+  if(a.status!=='playing'){
+    if(b.status==='playing'){sfx('start');if(zoomOn()&&b.players.some(p=>p.id===pid&&!p.w)){dealState=1;if(!zt&&screenKind()==='game'){$('#app').classList.add('dealing');maybeDeal()}}} // kartu dibagikan ke setiap pemain
+    return
+  }
   const me=b.players.findIndex(p=>p.id===pid),ap=a.turn,tp=b.players.filter(p=>!p.w).length;
   if(a.players.length!==b.players.length){if(b.status==='finished'&&me>=0&&b.players[me].rank)setTimeout(sfx,300,'win');return} // ada yang masuk/keluar
   if(b.discard.length>a.discard.length){
@@ -831,6 +844,7 @@ function listenInbox(){
 function openSettings(){
   panel('Pengaturan',`<label class="mut">Tema latar belakang</label><div class="ths">${THEMES.map(t=>`<button class="th ${t.d?'d':''} ${t.id===THEME?'sel':''}" style="background:${t.bg}" onclick="A.theme('${t.id}')">${t.n}</button>`).join('')}</div>
   <label class="mut">Tampilan meja saat bermain</label><button onclick="A.follow()">${ic('rotate-right')} ${follow()?'Ikuti pemain (meja berputar)':'Tetap (meja diam)'}</button>
+  <label class="mut">Animasi transisi &amp; pembagian kartu</label><button onclick="A.zoom()">${ic('animation-play')} ${zoomOn()?'Menyala':'Mati'}</button>
   <label class="mut">Suara</label><button id="sb" onclick="A.snd2()">${mute?'Suara: mati':'Suara: menyala'}</button>
   <label class="mut">Notifikasi sistem</label><button onclick="A.notif()">${osOn()?'Aktif':'Mati'}</button>
   <p class="mut" style="font-size:12px">Notifikasi sistem muncul saat aplikasi terbuka di latar belakang. Notifikasi di dalam aplikasi selalu aktif.</p>`)
@@ -856,6 +870,7 @@ Object.assign(A,{
   close(){chatUn&&chatUn();chatUn=null;chatWith=null;rcOpen=false;curTab='main';setTab();PN().innerHTML=''},
   tab(t){t==='main'?A.close():A.panel(t)},
   follow(){C.set('follow',follow()?0:1);openSettings()},
+  zoom(){C.set('zoom',zoomOn()?0:1);openSettings()},
   theme(id){THEME=id;C.set('theme',id);applyTheme(id);openSettings()},
   snd2(){mute=!mute;st.set('mute',mute?'1':'0');const b=$('#sb');if(b)b.textContent=mute?'Suara: mati':'Suara: menyala';if(!mute)sfx('turn')},
   async notif(){
@@ -986,13 +1001,67 @@ Object.assign(A,{
   }
 });
 
+/* ===== Transisi Zoom-to-Reveal & animasi membagi kartu ===== */
+const zoomOn=()=>C.get('zoom')!==0;
+let zt=null,lastKind=null,dealState=0; // dealState: 0 tidak, 1 menunggu, 2 berjalan
+const screenKind=()=>!room||!S?(!ready?'load':!AU?'login':!ME?'setup':'home'):S.status==='lobby'?'lobby':'game';
+function render(){ // pergantian halaman memakai transisi; pembaruan di halaman yang sama langsung
+  const k=screenKind();
+  if(zt){zt.dirty=true;return}
+  if(lastKind===null||k===lastKind||!zoomOn()){renderNow();lastKind=k;maybeDeal();return}
+  zoomTo()
+}
+function zoomTo(){
+  const el=$('#app'),ov=$('#zt'),f=ov.firstElementChild;zt={dirty:false};
+  ov.style.display='grid';el.style.background='var(--bgi,var(--bg))';el.style.backgroundAttachment='fixed';
+  let wd;
+  const fin=()=>{clearTimeout(wd);el.getAnimations().forEach(a=>a.cancel());f.getAnimations().forEach(a=>a.cancel());
+    el.style.background='';el.style.backgroundAttachment='';ov.style.display='none';const d=zt&&zt.dirty;zt=null;if(d){renderNow();lastKind=screenKind()}maybeDeal()};
+  wd=setTimeout(()=>{try{renderNow();lastKind=screenKind()}catch(e){}fin()},4000);
+  // 1) zoom-out: halaman lama menyusut ke titik fokus, kartu fokus muncul
+  f.animate([{transform:'scale(.4)',opacity:0},{transform:'scale(1)',opacity:1}],{duration:260,easing:'cubic-bezier(.2,.9,.3,1.4)',fill:'forwards'});
+  el.animate([{clipPath:'circle(75% at 50% 50%)'},{clipPath:'circle(0% at 50% 50%)'}],{duration:260,easing:'cubic-bezier(.55,0,.85,.4)',fill:'forwards'}).finished.then(()=>{
+    renderNow();lastKind=screenKind();zt.dirty=false; // halaman diganti saat tertutup
+    setTimeout(()=>{ // 2) zoom-in: kartu fokus membesar, halaman baru terungkap dari titik tengah
+      if(zt.dirty){renderNow();lastKind=screenKind();zt.dirty=false}
+      f.getAnimations().forEach(a=>a.cancel());el.getAnimations().forEach(a=>a.cancel());
+      f.animate([{transform:'scale(1)',opacity:1},{transform:'scale(16)',opacity:0}],{duration:560,easing:'cubic-bezier(.55,0,.9,.45)',fill:'forwards'});
+      el.animate([{clipPath:'circle(0% at 50% 50%)'},{clipPath:'circle(75% at 50% 50%)'}],{duration:560,easing:'cubic-bezier(.15,.75,.2,1)'}).finished.then(fin).catch(fin)
+    },220)
+  }).catch(fin)
+}
+function maybeDeal(){ // membagikan 7 kartu ke setiap pemain satu per satu dari tumpukan ambil
+  if(dealState!==1||zt||screenKind()!=='game'||!S)return;
+  const pile=rect('#dp'),np=S.players.length,w=cwv()*.5;
+  if(!pile){dealState=0;renderNow();return}
+  dealState=2;$('#app').classList.add('dealing','dealrun');
+  document.querySelectorAll('.sx .cnt').forEach(e=>{if(!e.querySelector('.mdi'))e.textContent='0'});
+  const per=7*np,gap=Math.max(28,Math.min(85,2200/per)),cnt=Array(np).fill(0);let landed=0,done=false;
+  const end=()=>{if(done)return;done=true;finishDeal()};
+  setTimeout(end,per*gap+1500);
+  const target=i=>{const me=S.players[i].id===pid,r=me?rect('.hand'):rect(`.sx[data-p="${i}"] .sav`);if(!r)return null;
+    const cx=r.left+r.width/2,cy=me?r.top+r.height*.72:r.top+r.height/2;return{left:cx-w/2,top:cy-w*.75,width:w,height:w*1.5}};
+  for(let r=0;r<7;r++)for(let i=0;i<np;i++){
+    const k=r*np+i;
+    fly(pile,target(i),'<div class="c back mini"></div>',k*gap,()=>{landed++;const c=$(`.sx[data-p="${i}"] .cnt`);if(c)c.textContent=++cnt[i];if(k%3===0)sfx('draw');if(landed>=per)end()},320)
+  }
+}
+function finishDeal(){
+  dealState=0;const el=$('#app');if(!el||!S)return;
+  el.classList.remove('dealing','dealrun');
+  S.players.forEach((p,i)=>{const c=$(`.sx[data-p="${i}"] .cnt`);if(c&&!c.querySelector('.mdi')&&!p.rank)c.textContent=p.hand.length});
+  document.querySelectorAll('.hand .c').forEach((e,k)=>{e.style.animation=`cpop .35s ${k*45}ms cubic-bezier(.2,.9,.3,1.5) backwards`;setTimeout(()=>{e.style.animation=''},900+k*45)});
+  const t=$('#disc .c:last-child');if(t&&S.discard.length)throwCard(rect('#dp'),t,S.discard[S.discard.length-1],S.color); // kartu pembuka dibuka ke tumpukan buang
+  sfx('play')
+}
+
 /* ===== Tampilan ===== */
 const card=(c,col,cls='',at='')=>{ // kartu ala UNO asli: sisi berwarna, oval putih, angka besar, angka kecil di sudut
   const w=c[0]==='W',cc=w&&!col?'W':col||c[0],l=lab(c),big=w&&!col?(c==='WF'?'+4':''):l,cor=w&&!col&&c!=='WF'?'':l;
   return `<div class="c ${cc} ${cls}" ${at}><s></s><i>${big}</i>${cor?`<u>${cor}</u><u class="b">${cor}</u>`:''}</div>`};
-function render(){
+function renderNow(){
   const el=$('#app'),game=!!(room&&S&&S.status!=='lobby');
-  el.className=game?'g':'';document.documentElement.classList.toggle('ing',game);
+  el.classList.toggle('g',game);el.classList.toggle('dealing',game&&dealState>0);el.classList.toggle('dealrun',game&&dealState===2);document.documentElement.classList.toggle('ing',game);
   if(!room||!S){
     ringSeen=false;
     const h='<h1 class="logo"><span>U</span><span>N</span><span>O</span></h1>'+hero();
