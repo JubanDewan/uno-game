@@ -269,7 +269,7 @@ button.ni .dot{position:absolute;top:-2px;left:calc(50% + 8px);margin:0;min-widt
 .hand{flex-wrap:nowrap}
 @media(orientation:landscape) and (max-height:520px){
   .tbl{--cw:34px;--ch:51px}.sav{--av:36px;font-size:16px}.sx{width:64px}.sx .nm{display:none}.felt{inset:6% 6%}
-  .me{position:static}.mehead{position:static;flex-direction:row;padding:0}.hand{padding:30px 16px 6px;margin-top:-16px}
+  .me{position:static}.mehead{position:relative;z-index:3;flex-direction:row;padding:0}.hand{padding:30px 16px 6px;margin-top:-16px}
   .bub small{display:none}.bub{padding:2px 10px;font-size:12px;flex:none}
   button.ni{padding:2px 0}button.ni .mdi{height:26px}
   h1.logo{font-size:40px}.hero{display:none}
@@ -290,6 +290,13 @@ button.r{background:var(--R);color:#fff}
 .cpb{margin-top:10px}
 button.chipr{gap:6px;cursor:pointer}button.chipr .mdi{font-size:14px}
 .row .ib{flex:none}
+/* tangan: kartu tidak bertumpuk, bisa digeser kiri-kanan */
+.mehead{position:relative;z-index:3}
+.hand{justify-content:flex-start;pointer-events:auto;overflow-x:auto;overscroll-behavior-x:contain;touch-action:pan-x;-webkit-overflow-scrolling:touch;scrollbar-width:none;-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%);mask-image:linear-gradient(90deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%)}
+.hand::-webkit-scrollbar{display:none}
+.hand .c:first-child{margin-left:auto}.hand .c:last-child{margin-right:auto}
+.hs{height:10px;margin:2px 26px 0;border:2px solid var(--ol);border-radius:6px;background:#0002;overflow:hidden}
+.hs i{display:block;height:100%;background:var(--Y);border-radius:3px;min-width:14px}
 </style>
 </head>
 <body>
@@ -308,7 +315,7 @@ setTimeout(function(){show('Game belum termuat. Cek internet, buka file lewat ho
 const CFG={apiKey:"AIzaSyDF5n9QLR136niB935lG8ThtkI0lgfzaVY",authDomain:"game-5d4ed.firebaseapp.com",projectId:"game-5d4ed",storageBucket:"game-5d4ed.firebasestorage.app",messagingSenderId:"817751327735",appId:"1:817751327735:web:fa1a24d4f232e62f7ae4f2",measurementId:"G-CD48QGV9TZ"};
 let initializeApp,getFirestore,doc,setDoc,onSnapshot,runTransaction,deleteDoc,getDoc,getDocs,collection,query,orderBy,limit,increment,addDoc,getAuth,GoogleAuthProvider,signInWithPopup,signInWithRedirect,getRedirectResult,onAuthStateChanged,signOut,linkWithPopup,db,auth;
 
-const APP_VER='16';
+const APP_VER='17';
 const VOICE_API='https://uno-game-voice.jubandewan.workers.dev'; // isi dengan URL Worker penerbit token LiveKit, mis. https://uno-voice.namamu.workers.dev (lihat voice-worker.js) // naikkan setiap rilis; dipakai untuk mendeteksi versi baru
 const $=s=>document.querySelector(s);
 const st={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch{}}};
@@ -482,6 +489,11 @@ function fly(from,to,html,delay,after){
   const dx=from.left+from.width/2-to.left-to.width/2,dy=from.top+from.height/2-to.top-to.height/2;
   c.animate([{transform:`translate(${dx}px,${dy}px) scale(${from.width/to.width}) rotate(-12deg)`},{transform:'none'}],{duration:420,delay,easing:'cubic-bezier(.2,.8,.25,1)',fill:'backwards'}).onfinish=()=>{c.remove();after&&after()}
 }
+function bindHS(){ // indikator posisi geser kartu di tangan
+  const h=$('.hand'),t=$('.hs'),i=t&&t.firstChild;if(!h||!i)return;
+  const u=()=>{const r=h.clientWidth/h.scrollWidth;t.style.visibility=r>=.995?'hidden':'visible';i.style.width=(r*100)+'%';i.style.marginLeft=(h.scrollLeft/h.scrollWidth*100)+'%'};
+  h.addEventListener('scroll',u,{passive:true});u()
+}
 function throwCard(from,t,c,col){ // kartu dilempar dengan efek 3D sederhana (translate3d + rotateX/Z)
   const d=$('#disc');if(!from||!t||!d)return;
   const dr=d.getBoundingClientRect(),w=document.createElement('div');
@@ -525,7 +537,7 @@ function fx(a,b){ // bandingkan state lama & baru: animasi + suara
       sfx('draw');
       for(let k=0;k<g;k++){
         if(i===me){const idx=p.hand.length-g+k,t=document.querySelector(`.hand [data-i="${idx}"]`);
-          if(t){t.style.visibility='hidden';fly(rect('#dp'),t.getBoundingClientRect(),card(p.hand[idx],''),k*120,()=>t.style.visibility='')}}
+          if(t){t.scrollIntoView({block:'nearest',inline:'center'});t.style.visibility='hidden';fly(rect('#dp'),t.getBoundingClientRect(),card(p.hand[idx],''),k*120,()=>t.style.visibility='')}}
         else{const f=rect(`.sx[data-p="${i}"] .sav`),w=cwv()*.55;
           f&&fly(rect('#dp'),{left:f.left+f.width/2-w/2,top:f.top,width:w,height:w*1.5},'<div class="c back mini"></div>',k*120)}
       }
@@ -1022,7 +1034,7 @@ function render(){
   const meI=S.players.findIndex(p=>p.id===pid),me=S.players[meI],cur=S.players[S.turn],play=S.status==='playing',mine=play&&cur.id===pid,n=me.hand.length,np=S.players.length;
   const last=n-1,can=i=>mine&&ok(S,me.hand[i])&&(!S.drew||i===last),any=me.hand.some((_,i)=>can(i)),canDraw=mine&&!S.drew; // boleh mengambil kartu walau ada yang cocok (bisa mengecoh lawan)
   const msg=!play?'':mine?(S.drew?'Mainkan kartu yang baru diambil, atau lewati':any?'Giliranmu! Mainkan kartu atau ketuk tumpukan':'Tidak ada kartu cocok — ketuk tumpukan'):'Giliran '+esc(cur.name);
-  const cw=cwv(),gap=6,mg=n>1?Math.max(gap-Math.max(0,(n*cw+(n-1)*gap-(innerWidth-52))/(n-1)),-cw*.6):0;
+  const mg=8; // kartu tidak bertumpuk; jika banyak, area tangan bisa digeser kiri-kanan
   const order=me.hand.map((c,i)=>[c,i]).sort((a,b)=>a[0]<b[0]?-1:1);
   const tgt=ringTarget();let needAnim=false;if(!ringSeen){ringRot=tgt;ringSeen=true}else needAnim=true;
   const seat=i=>{const p=S.players[i],r=(i-meI+np)%np,c=p.hand.length,[x,y]=seatXY(r,np,ringRot);
@@ -1031,17 +1043,19 @@ function render(){
   const dl=S.discard.length,stack=S.discard.slice(-4).map((c,j,arr)=>{const ai=dl-arr.length+j,tp=j===arr.length-1,x=tp?0:(ai*31)%13-6,y=tp?0:(ai*17)%11-5,rz=tp?(ai*7)%9-4:(ai*53)%17-8;
     return card(c,tp?S.color:'','',`style="--x:${x}px;--y:${y}px;--r:${rz}deg"${tp?` data-rest="translate3d(${x}px,${y}px,0) rotateZ(${rz}deg) rotateX(14deg)"`:''}`)}).join('');
   const ring=`<div class="ringw" style="transform:scaleX(${S.dir})"><svg class="ring" style="animation-delay:-${((Date.now()/1000)%8).toFixed(2)}s" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"><defs><marker id="ah" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto"><path d="M0 0L10 5L0 10z" fill="currentColor" stroke="none"/></marker></defs><path d="M16 30A40 40 0 0 1 84 30" marker-end="url(#ah)"/><path d="M84 70A40 40 0 0 1 16 70" marker-end="url(#ah)"/></svg></div>`;
+  const hsl=($('.hand')||{}).scrollLeft||0; // pertahankan posisi geser saat tampilan diperbarui
   el.innerHTML=`<div class="gm">${bar}
   <div class="tbl" id="tbl" data-n="${np}"><div class="felt"></div>
    <svg class="trk" viewBox="0 0 100 100" preserveAspectRatio="none"><ellipse class="flow" cx="50" cy="50" rx="${RX}" ry="${RY}" style="animation-direction:${S.dir===1?'normal':'reverse'}"/></svg>
    <div class="piles">${ring}<div class="pile"><div id="dp" class="c back big ${canDraw?'dr':''} ${canDraw&&!any?'go':''}" ${canDraw?'onclick="A.draw()" role="button" tabindex="0"':''}></div><small>${S.draw.length}${canDraw?' · ambil':''}</small></div><div id="disc" class="d3">${stack}</div></div>
    ${S.players.map((_,i)=>seat(i)).join('')}</div>
   <div class="me ${mine?'t':''}"><div class="mehead"><div class="bub">${msg?`<b>${msg}</b>`:''}<small>${esc(S.log)}</small></div>${mine&&S.drew?`<button class="p" onclick="A.pass()">${ic('skip-next')} Lewati</button>`:''}</div>
-  ${play&&!n?`<div class="spec">${me.w?'Kamu menonton permainan ini.<br>Kamu ikut main saat host menekan Main lagi.':`Kamu selesai di peringkat #${me.rank}.<br>Kamu menonton sampai permainan berakhir.`}</div>`:''}<div class="hand">${order.map(([c,i],k)=>card(c,'',mine?(can(i)?'on':'off'):'',`data-i="${i}" style="margin-left:${k?mg:0}px"${can(i)?` onclick="A.tap(${i},event)"`:''}`)).join('')}</div></div></div>
+  ${play&&!n?`<div class="spec">${me.w?'Kamu menonton permainan ini.<br>Kamu ikut main saat host menekan Main lagi.':`Kamu selesai di peringkat #${me.rank}.<br>Kamu menonton sampai permainan berakhir.`}</div>`:''}<div class="hand">${order.map(([c,i],k)=>card(c,'',mine?(can(i)?'on':'off'):'',`data-i="${i}" ${k?`style="margin-left:${mg}px"`:''}${can(i)?` onclick="A.tap(${i},event)"`:''}`)).join('')}</div><div class="hs"><i></i></div></div></div>
   ${pick!==null?`<div class="ov"><div><b>Pilih warna</b><div class="cp">${['R','Y','G','B'].map(c=>`<button data-c="${c}" style="background:var(--${c})" onclick="A.col('${c}')">${COL[c]}</button>`).join('')}</div><p><button onclick="A.cancel()">Batal</button></p></div></div>`:''}
   ${S.status==='finished'?`<div class="ov"><div><h2 style="margin:0 0 6px">${me.w?'Permainan selesai':me.rank===1?'Kamu juara 1!':me.l?'Kamu kalah':'Kamu peringkat #'+me.rank}</h2><p class="mut" style="margin:0 0 8px">${esc(S.log||'')}</p>
     <ol class="rk">${S.players.filter(x=>!x.w&&x.rank).sort((x,y)=>x.rank-y.rank).map(x=>`<li><b>${x.rank}</b><span>${esc(x.name)}${x.id===pid?' (kamu)':''}</span>${x.l?'<em class="mut">kalah</em>':''}</li>`).join('')}</ol>
     ${S.host===pid?'<div class="row" style="justify-content:center"><button class="p" onclick="A.again()">Main lagi</button><button onclick="A.leave()">Tutup room</button></div>':'<p class="mut" style="font-size:13px;margin:0 0 10px">Menunggu host menekan Main lagi…</p><button onclick="A.leave()">Keluar</button>'}</div></div>`:''}`
+  {const h2=$('.hand');if(h2){h2.scrollLeft=hsl;bindHS()}}
   if(needAnim)animRing()
 }
 render();window.__ok=1;
